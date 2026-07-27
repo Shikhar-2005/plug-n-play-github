@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RepoRun</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup">
+    <!-- Header -->
+    <header class="popup-header">
+      <div class="popup-logo">
+        <svg viewBox="0 0 24 24" fill="none" width="24" height="24">
+          <circle cx="12" cy="12" r="11" stroke="url(#pg)" stroke-width="2" fill="none"/>
+          <polygon points="9.5 7 17 12 9.5 17" fill="url(#pg)"/>
+          <defs>
+            <linearGradient id="pg" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" style="stop-color:#6366f1"/>
+              <stop offset="100%" style="stop-color:#a855f7"/>
+            </linearGradient>
+          </defs>
+        </svg>
+        <span class="popup-brand">RepoRun</span>
+      </div>
+      <div class="popup-status" id="status-indicator">
+        <span class="status-dot" id="status-dot"></span>
+        <span class="status-text" id="status-text">Checking…</span>
+      </div>
+    </header>
+
+    <!-- Sessions List -->
+    <section class="popup-section">
+      <h3 class="section-title">Active Sessions</h3>
+      <div class="sessions-list" id="sessions-list">
+        <div class="sessions-empty" id="sessions-empty">
+          <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5">
+            <rect x="2" y="3" width="20" height="14" rx="2"/>
+            <line x1="8" y1="21" x2="16" y2="21"/>
+            <line x1="12" y1="17" x2="12" y2="21"/>
+          </svg>
+          <p>No active sessions</p>
+          <p class="sessions-hint">Visit a GitHub repo and click <strong>▶ Run this repo</strong></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Settings -->
+    <section class="popup-section popup-settings">
+      <h3 class="section-title">Settings</h3>
+      <div class="setting-row">
+        <label class="setting-label" for="backend-url">Backend URL</label>
+        <div class="setting-input-wrap">
+          <input type="text" id="backend-url" class="setting-input" placeholder="http://localhost:3000" spellcheck="false"/>
+          <button class="setting-save" id="save-settings" title="Save">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="popup-footer">
+      <a href="http://localhost:3000/dashboard" target="_blank" class="footer-link">Open Dashboard</a>
+      <span class="footer-version">v1.0.0</span>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

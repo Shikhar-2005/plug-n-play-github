@@ -1,0 +1,612 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   RepoRun — Content Script Styles
+   Injected on GitHub pages alongside the Run button and modal.
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* ── Variables ── */
+:root {
+  --rr-primary: #6366f1;
+  --rr-primary-hover: #4f46e5;
+  --rr-primary-glow: rgba(99, 102, 241, 0.35);
+  --rr-accent: #a855f7;
+  --rr-success: #22c55e;
+  --rr-warning: #f59e0b;
+  --rr-error: #ef4444;
+  --rr-bg: #0f0f14;
+  --rr-bg-elevated: #1a1a24;
+  --rr-bg-card: #1e1e2a;
+  --rr-border: rgba(255, 255, 255, 0.08);
+  --rr-text: #e4e4e7;
+  --rr-text-muted: #a1a1aa;
+  --rr-text-dim: #71717a;
+  --rr-radius: 12px;
+  --rr-radius-sm: 8px;
+  --rr-font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+}
+
+/* ── Run Button ── */
+.reporun-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  font-family: var(--rr-font);
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(135deg, var(--rr-primary), var(--rr-accent));
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px var(--rr-primary-glow);
+  white-space: nowrap;
+  line-height: 1.4;
+  position: relative;
+  overflow: hidden;
+}
+
+.reporun-btn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(255,255,255,0.15), transparent);
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.reporun-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px var(--rr-primary-glow);
+}
+
+.reporun-btn:hover::before {
+  opacity: 1;
+}
+
+.reporun-btn:active {
+  transform: translateY(0);
+}
+
+.reporun-btn-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.reporun-btn-floating {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 99999;
+  padding: 12px 20px;
+  font-size: 14px;
+  border-radius: 50px;
+  box-shadow: 0 4px 24px var(--rr-primary-glow), 0 0 0 1px rgba(99, 102, 241, 0.2);
+  animation: reporun-float-in 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes reporun-float-in {
+  from { opacity: 0; transform: translateY(20px) scale(0.9); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ── Modal Overlay ── */
+.reporun-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 999999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(8px);
+  animation: reporun-fade-in 0.2s ease;
+}
+
+@keyframes reporun-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.reporun-modal {
+  background: var(--rr-bg);
+  border: 1px solid var(--rr-border);
+  border-radius: var(--rr-radius);
+  width: 520px;
+  max-width: 92vw;
+  max-height: 85vh;
+  overflow-y: auto;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255,255,255,0.05);
+  animation: reporun-modal-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  color: var(--rr-text);
+  font-family: var(--rr-font);
+}
+
+@keyframes reporun-modal-in {
+  from { opacity: 0; transform: scale(0.95) translateY(10px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.reporun-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--rr-border);
+}
+
+.reporun-modal-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.reporun-modal-title {
+  font-size: 16px;
+  font-weight: 700;
+  background: linear-gradient(135deg, var(--rr-primary), var(--rr-accent));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.reporun-modal-close {
+  background: none;
+  border: none;
+  color: var(--rr-text-dim);
+  font-size: 22px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: all 0.15s;
+  line-height: 1;
+}
+
+.reporun-modal-close:hover {
+  background: rgba(255,255,255,0.08);
+  color: var(--rr-text);
+}
+
+.reporun-modal-body {
+  padding: 20px;
+}
+
+/* ── Progress View ── */
+.reporun-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.reporun-repo-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: var(--rr-bg-elevated);
+  border: 1px solid var(--rr-border);
+  border-radius: var(--rr-radius-sm);
+  font-size: 13px;
+  color: var(--rr-text-muted);
+}
+
+.reporun-repo-badge svg {
+  color: var(--rr-text-dim);
+}
+
+.reporun-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.reporun-step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--rr-radius-sm);
+  transition: background 0.2s;
+}
+
+.reporun-step[data-status="running"] {
+  background: rgba(99, 102, 241, 0.08);
+}
+
+.reporun-step[data-status="done"] .reporun-step-label {
+  color: var(--rr-text-muted);
+}
+
+.reporun-step-indicator {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.reporun-step-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--rr-text-dim);
+  opacity: 0.4;
+}
+
+.reporun-step-label {
+  font-size: 13px;
+  font-weight: 500;
+  flex-grow: 1;
+}
+
+.reporun-step-detail {
+  font-size: 12px;
+  color: var(--rr-text-dim);
+}
+
+/* ── Spinner ── */
+.reporun-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(99, 102, 241, 0.2);
+  border-top-color: var(--rr-primary);
+  border-radius: 50%;
+  animation: reporun-spin 0.7s linear infinite;
+}
+
+@keyframes reporun-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Build Logs ── */
+.reporun-logs {
+  background: var(--rr-bg-elevated);
+  border: 1px solid var(--rr-border);
+  border-radius: var(--rr-radius-sm);
+  overflow: hidden;
+}
+
+.reporun-logs-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--rr-text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--rr-border);
+}
+
+.reporun-logs-toggle {
+  background: none;
+  border: none;
+  color: var(--rr-text-dim);
+  cursor: pointer;
+  font-size: 10px;
+  padding: 2px 6px;
+}
+
+.reporun-logs-content {
+  max-height: 160px;
+  overflow-y: auto;
+  padding: 8px 12px;
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--rr-text-dim);
+}
+
+.reporun-log-line {
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.reporun-log-build { color: var(--rr-text-dim); }
+.reporun-log-run { color: var(--rr-text-muted); }
+
+/* ── Ready State ── */
+.reporun-ready {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 12px;
+  padding: 8px 0;
+}
+
+.reporun-ready-icon {
+  animation: reporun-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes reporun-pop {
+  from { transform: scale(0.5); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+.reporun-ready-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--rr-text);
+  margin: 0;
+}
+
+.reporun-ready-subtitle {
+  font-size: 13px;
+  color: var(--rr-text-muted);
+  margin: 0;
+}
+
+.reporun-ready-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.reporun-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  font-family: var(--rr-font);
+  font-size: 13px;
+  font-weight: 600;
+  border: none;
+  border-radius: var(--rr-radius-sm);
+  cursor: pointer;
+  transition: all 0.2s;
+  text-decoration: none;
+}
+
+.reporun-action-primary {
+  color: #fff;
+  background: linear-gradient(135deg, var(--rr-primary), var(--rr-accent));
+  box-shadow: 0 2px 12px var(--rr-primary-glow);
+}
+
+.reporun-action-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 20px var(--rr-primary-glow);
+}
+
+.reporun-action-secondary {
+  color: var(--rr-text);
+  background: var(--rr-bg-elevated);
+  border: 1px solid var(--rr-border);
+}
+
+.reporun-action-secondary:hover {
+  background: var(--rr-bg-card);
+  border-color: rgba(255,255,255,0.15);
+}
+
+.reporun-ready-meta {
+  display: flex;
+  gap: 24px;
+  margin-top: 8px;
+  padding: 12px 20px;
+  background: var(--rr-bg-elevated);
+  border-radius: var(--rr-radius-sm);
+  border: 1px solid var(--rr-border);
+}
+
+.reporun-meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.reporun-meta-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--rr-text-dim);
+}
+
+.reporun-meta-value {
+  font-size: 13px;
+  color: var(--rr-text);
+  font-family: 'SF Mono', monospace;
+}
+
+.reporun-stop-btn {
+  margin-top: 8px;
+  padding: 8px 16px;
+  font-family: var(--rr-font);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--rr-error);
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.reporun-stop-btn:hover {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.4);
+}
+
+/* ── Resolution Prompts ── */
+.reporun-resolution {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.reporun-resolution-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.reporun-resolution-title {
+  font-size: 16px;
+  font-weight: 700;
+  margin: 0;
+  color: var(--rr-text);
+}
+
+.reporun-resolution-subtitle {
+  font-size: 13px;
+  color: var(--rr-text-muted);
+  margin: 4px 0 0;
+}
+
+.reporun-resolution-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.reporun-resolution-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.reporun-field-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.reporun-field-name {
+  font-family: 'SF Mono', monospace;
+  color: var(--rr-primary);
+}
+
+.reporun-field-link {
+  font-size: 12px;
+  color: var(--rr-accent);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.reporun-field-link:hover {
+  text-decoration: underline;
+}
+
+.reporun-field-desc {
+  font-size: 12px;
+  color: var(--rr-text-dim);
+  margin: 0;
+}
+
+.reporun-field-input {
+  padding: 10px 12px;
+  font-family: 'SF Mono', monospace;
+  font-size: 13px;
+  color: var(--rr-text);
+  background: var(--rr-bg-elevated);
+  border: 1px solid var(--rr-border);
+  border-radius: 6px;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.reporun-field-input:focus {
+  border-color: var(--rr-primary);
+  box-shadow: 0 0 0 3px var(--rr-primary-glow);
+}
+
+.reporun-field-input::placeholder {
+  color: var(--rr-text-dim);
+}
+
+.reporun-field-security {
+  font-size: 11px;
+  color: var(--rr-text-dim);
+  margin: 0;
+  opacity: 0.7;
+}
+
+.reporun-field-hint {
+  font-size: 12px;
+  color: var(--rr-text-dim);
+  margin: 0;
+  font-style: italic;
+}
+
+.reporun-radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.reporun-radio-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--rr-bg-elevated);
+  border: 1px solid var(--rr-border);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.15s;
+}
+
+.reporun-radio-option:hover {
+  border-color: var(--rr-primary);
+  background: rgba(99, 102, 241, 0.05);
+}
+
+.reporun-radio-option input[type="radio"] {
+  accent-color: var(--rr-primary);
+}
+
+.reporun-submit-btn {
+  margin-top: 4px;
+  width: 100%;
+  justify-content: center;
+}
+
+/* ── Error State ── */
+.reporun-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 12px;
+  padding: 16px 0;
+}
+
+.reporun-error-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--rr-text);
+  margin: 0;
+}
+
+.reporun-error-message {
+  font-size: 13px;
+  color: var(--rr-text-muted);
+  margin: 0;
+  max-width: 360px;
+  word-break: break-word;
+}
+
+/* ── Scrollbar ── */
+.reporun-modal ::-webkit-scrollbar {
+  width: 6px;
+}
+
+.reporun-modal ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.reporun-modal ::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.1);
+  border-radius: 3px;
+}
+
+.reporun-modal ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,255,255,0.2);
+}

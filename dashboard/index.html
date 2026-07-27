@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RepoRun — Dashboard</title>
+  <meta name="description" content="RepoRun Dashboard — Monitor and manage your running GitHub repo sessions">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <!-- xterm.js for terminal -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
+
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- ── Ambient background ── -->
+  <div class="ambient-bg">
+    <div class="ambient-orb ambient-orb-1"></div>
+    <div class="ambient-orb ambient-orb-2"></div>
+    <div class="ambient-orb ambient-orb-3"></div>
+  </div>
+
+  <div class="app">
+    <!-- ── Header ── -->
+    <header class="header" id="app-header">
+      <div class="header-left">
+        <div class="logo">
+          <svg viewBox="0 0 24 24" fill="none" width="32" height="32">
+            <circle cx="12" cy="12" r="11" stroke="url(#dg)" stroke-width="2" fill="none"/>
+            <polygon points="9.5 7 17 12 9.5 17" fill="url(#dg)"/>
+            <defs>
+              <linearGradient id="dg" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" style="stop-color:#6366f1"/>
+                <stop offset="100%" style="stop-color:#a855f7"/>
+              </linearGradient>
+            </defs>
+          </svg>
+          <h1 class="logo-text">RepoRun</h1>
+        </div>
+        <span class="header-badge">Dashboard</span>
+      </div>
+      <div class="header-right">
+        <div class="server-status" id="server-status">
+          <span class="server-dot" id="server-dot"></span>
+          <span class="server-text" id="server-text">Connecting…</span>
+        </div>
+        <div class="header-stats">
+          <div class="stat-chip" id="stat-sessions">
+            <span class="stat-value">0</span>
+            <span class="stat-label">Sessions</span>
+          </div>
+          <div class="stat-chip" id="stat-cache">
+            <span class="stat-value">0</span>
+            <span class="stat-label">Cached</span>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- ── Main Content ── -->
+    <main class="main">
+      <!-- Sessions Grid -->
+      <section class="section" id="sessions-section">
+        <div class="section-header">
+          <h2 class="section-title">Active Sessions</h2>
+          <button class="btn-refresh" id="refresh-btn" title="Refresh">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="23 4 23 10 17 10"/>
+              <path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/>
+            </svg>
+          </button>
+        </div>
+
+        <!-- Empty State -->
+        <div class="empty-state" id="empty-state">
+          <div class="empty-icon">
+            <svg viewBox="0 0 24 24" width="56" height="56" fill="none" stroke="currentColor" stroke-width="1.2">
+              <rect x="2" y="3" width="20" height="14" rx="2"/>
+              <line x1="8" y1="21" x2="16" y2="21"/>
+              <line x1="12" y1="17" x2="12" y2="21"/>
+              <polygon points="10 8 10 14 15 11" fill="currentColor" stroke="none" opacity="0.3"/>
+            </svg>
+          </div>
+          <h3 class="empty-title">No active sessions</h3>
+          <p class="empty-desc">
+            Visit any GitHub repo and click <strong>▶ Run this repo</strong> to get started.
+            <br>The repo will be analyzed, containerized, and launched automatically.
+          </p>
+        </div>
+
+        <!-- Sessions Grid -->
+        <div class="sessions-grid" id="sessions-grid"></div>
+      </section>
+
+      <!-- Detail Panel (shown when a session is selected) -->
+      <section class="detail-panel" id="detail-panel" style="display:none;">
+        <div class="detail-header">
+          <button class="btn-back" id="back-btn">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="15 18 9 12 15 6"/>
+            </svg>
+            Back
+          </button>
+          <div class="detail-repo" id="detail-repo">owner/repo</div>
+          <div class="detail-actions">
+            <a class="btn-action btn-primary" id="detail-preview-btn" href="#" target="_blank">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/>
+                <polyline points="15 3 21 3 21 9"/>
+                <line x1="10" y1="14" x2="21" y2="3"/>
+              </svg>
+              Open Preview
+            </a>
+            <button class="btn-action btn-danger" id="detail-stop-btn">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="6" y="6" width="12" height="12" rx="1"/>
+              </svg>
+              Stop
+            </button>
+          </div>
+        </div>
+
+        <!-- Session Info Cards -->
+        <div class="detail-info" id="detail-info">
+          <div class="info-card">
+            <span class="info-label">Status</span>
+            <span class="info-value" id="detail-status">—</span>
+          </div>
+          <div class="info-card">
+            <span class="info-label">Port</span>
+            <span class="info-value" id="detail-port">—</span>
+          </div>
+          <div class="info-card">
+            <span class="info-label">Preview</span>
+            <span class="info-value"><a id="detail-url" href="#" target="_blank">—</a></span>
+          </div>
+          <div class="info-card">
+            <span class="info-label">Created</span>
+            <span class="info-value" id="detail-created">—</span>
+          </div>
+        </div>
+
+        <!-- Live Preview iframe -->
+        <div class="preview-frame-container" id="preview-container" style="display:none;">
+          <div class="preview-header">
+            <span class="preview-label">Live Preview</span>
+            <button class="preview-reload" id="preview-reload" title="Reload">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="23 4 23 10 17 10"/>
+                <path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/>
+              </svg>
+            </button>
+          </div>
+          <iframe class="preview-frame" id="preview-frame" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
+        </div>
+
+        <!-- Terminal -->
+        <div class="terminal-container" id="terminal-container">
+          <div class="terminal-header">
+            <span class="terminal-label">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="4 17 10 11 4 5"/>
+                <line x1="12" y1="19" x2="20" y2="19"/>
+              </svg>
+              Terminal
+            </span>
+            <span class="terminal-status" id="terminal-status">Disconnected</span>
+          </div>
+          <div id="terminal" class="terminal-view"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
