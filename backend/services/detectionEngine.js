@@ -222,12 +222,13 @@ async function detect(repoPath, meta = {}) {
   }
 
   // ── 12. Static HTML / Web App ──
-  if (hasFile('index.html') || hasFile('index.htm') || hasFile('public/index.html') || hasFile('src/index.html')) {
+  const htmlFiles = files.filter(f => f.toLowerCase().endsWith('.html') || f.toLowerCase().endsWith('.htm'));
+  if (htmlFiles.length > 0) {
     result.language = 'html';
     result.framework = 'static';
     result.startCommand = 'nginx -g "daemon off;"';
     result.confidence = 'high';
-    result.detectedFiles.push('index.html');
+    result.detectedFiles.push(path.basename(htmlFiles[0]));
     return result;
   }
 

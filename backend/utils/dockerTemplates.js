@@ -276,7 +276,8 @@ WORKDIR /usr/share/nginx/html
 COPY . /usr/share/nginx/html
 RUN if [ ! -f index.html ] && [ -f public/index.html ]; then cp -r public/* .; fi; \\
     if [ ! -f index.html ] && [ -f dist/index.html ]; then cp -r dist/* .; fi; \\
-    if [ ! -f index.html ] && [ -f src/index.html ]; then cp -r src/* .; fi;
+    if [ ! -f index.html ] && [ -f src/index.html ]; then cp -r src/* .; fi; \\
+    if [ ! -f index.html ]; then FIRST_HTML=$(ls *.html *.htm 2>/dev/null | head -n 1); if [ -n "$FIRST_HTML" ]; then cp "$FIRST_HTML" index.html; fi; fi
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]
 `;
