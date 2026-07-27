@@ -47,6 +47,27 @@ ENV PATH="/root/.bun/bin:\${PATH}"
 
     const startCmd = detection.startCommand || `${pm} start`;
 
+    // When project has static frontend (index.html) alongside an Express backend,
+    // generate a wrapper that injects express.static before the server starts
+    let staticWrapper = '';
+    let finalCmd = startCmd;
+    const entryMatch = startCmd.match(/^node\s+(.+)$/);
+    if (detection.hasStaticFrontend && entryMatch) {
+      const entryFile = entryMatch[1];
+      // Wrapper: patch http.Server.listen to inject express.static as fallback middleware
+      const wrapperCode = [
+        'const p=require("path"),e=require("express"),h=require("http"),ol=h.Server.prototype.listen;',
+        'h.Server.prototype.listen=function(...a){',
+        'const r=this._events&&this._events.request;',
+        'if(r&&r.use)r.use(e.static(p.resolve(__dirname)));',
+        'h.Server.prototype.listen=ol;',
+        'return ol.apply(this,a)};',
+        `require("./${entryFile}")`,
+      ].join('');
+      staticWrapper = `\n# Auto-serve static frontend alongside backend API\nRUN echo '${wrapperCode}' > _reporun_start.js\n`;
+      finalCmd = 'node _reporun_start.js';
+    }
+
     return `FROM node:${nodeVersion}-slim
 
 WORKDIR /app
@@ -60,12 +81,12 @@ RUN ${isDevServer ? installDevCmd : installCmd}
 
 # Copy source code
 COPY . .
-
+${staticWrapper}
 # Expose common ports
 EXPOSE 3000 5173 8080 4200
 
 # Start the app
-CMD ${JSON.stringify(startCmd.split(' '))}
+CMD ${JSON.stringify(finalCmd.split(' '))}
 `;
   },
 

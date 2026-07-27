@@ -380,6 +380,13 @@ function detectNode(repoPath) {
     if (allDeps['mongodb'] || allDeps['mongoose']) result.services.push('mongodb');
     if (allDeps['mysql'] || allDeps['mysql2']) result.services.push('mysql');
 
+    // Detect split frontend/backend pattern: index.html alongside a server entry point
+    const hasIndexHtml = fs.existsSync(path.join(repoPath, 'index.html'));
+    const entryIsServer = result.startCommand && /^node\s+(server|app|api|main)/.test(result.startCommand);
+    if (hasIndexHtml && entryIsServer && allDeps['express']) {
+      result.hasStaticFrontend = true;
+    }
+
     return result;
   } catch (e) {
     logger.warn('Failed to parse package.json', { error: e.message });
