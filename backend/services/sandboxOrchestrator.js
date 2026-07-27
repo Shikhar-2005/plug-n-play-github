@@ -13,6 +13,7 @@
 const Docker = require('dockerode');
 const fs = require('fs');
 const path = require('path');
+const net = require('net');
 const config = require('../config');
 const logger = require('../utils/logger');
 
@@ -25,26 +26,36 @@ const allocatedPorts = new Set();
 let nextPort = config.portRangeStart;
 
 /**
- * Allocate an available host port.
+ * Check if a TCP port is free on the network interface.
  */
-function allocatePort() {
-  while (allocatedPorts.has(nextPort) && nextPort <= config.portRangeEnd) {
-    nextPort++;
-  }
-  if (nextPort > config.portRangeEnd) {
-    nextPort = config.portRangeStart;
-    // Second pass
-    while (allocatedPorts.has(nextPort) && nextPort <= config.portRangeEnd) {
-      nextPort++;
+function isPortFree(port) {
+  return new Promise((resolve) => {
+    const server = net.createServer();
+    server.once('error', () => resolve(false));
+    server.once('listening', () => {
+      server.close(() => resolve(true));
+    });
+    server.listen(port, '0.0.0.0');
+  });
+}
+
+/**
+ * Allocate an available host port verified against the OS TCP stack.
+ */
+async function allocatePort() {
+  const start = config.portRangeStart;
+  const end = config.portRangeEnd;
+
+  for (let attempts = 0; attempts <= (end - start); attempts++) {
+    const port = nextPort;
+    nextPort = nextPort >= end ? start : nextPort + 1;
+
+    if (!allocatedPorts.has(port) && (await isPortFree(port))) {
+      allocatedPorts.add(port);
+      return port;
     }
   }
-  if (nextPort > config.portRangeEnd) {
-    throw new Error('No available ports in the configured range');
-  }
-  const port = nextPort;
-  allocatedPorts.add(port);
-  nextPort++;
-  return port;
+  throw new Error('No available ports in the configured range');
 }
 
 function releasePort(port) {
@@ -129,7 +140,7 @@ async function buildImage(sessionId, clonePath, containerConfig, onLog = () => {
  * @returns {{ containerId, previewUrl, terminalUrl, ports }}
  */
 async function runContainer(sessionId, imageTag, containerConfig, onLog = () => {}) {
-  const hostPort = allocatePort();
+  const hostPort = await allocatePort();
   const containerPort = containerConfig.exposePort || 3000;
 
   const containerName = `reporun-${sessionId}`.toLowerCase().replace(/[^a-z0-9-]/g, '-');
