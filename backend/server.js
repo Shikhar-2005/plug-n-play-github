@@ -28,15 +28,17 @@ const server = http.createServer(app);
 // ── Middleware ──
 app.use(cors({
   origin: function (origin, callback) {
-    // Allow requests with no origin (curl, server-to-server)
-    if (!origin) return callback(null, true);
-    // Allow Chrome extensions, localhost, and 127.0.0.1
+    // Allow requests with no origin (curl, server-to-server) or local file/iframe origins
+    if (!origin || origin === 'null') return callback(null, true);
+    // Allow Chrome extensions, GitHub web pages, localhost, and 127.0.0.1
     if (/^chrome-extension:\/\//.test(origin)
+      || /^https?:\/\/([a-zA-Z0-9-]+\.)?github\.com/.test(origin)
       || /^http:\/\/localhost/.test(origin)
       || /^http:\/\/127\.0\.0\.1/.test(origin)) {
       return callback(null, true);
     }
-    callback(new Error('CORS not allowed'));
+    logger.warn('CORS blocked request', { origin });
+    callback(new Error(`CORS not allowed for origin: ${origin}`));
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Session-Id'],
