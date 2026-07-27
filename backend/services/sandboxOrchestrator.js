@@ -40,7 +40,26 @@ function isPortFree(port) {
 }
 
 /**
- * Allocate an available host port verified against the OS TCP stack.
+ * Query active Docker containers to ensure port is not bound in WSL2 proxy.
+ */
+async function isDockerPortFree(port) {
+  try {
+    const containers = await docker.listContainers({ all: true });
+    for (const c of containers) {
+      if (c.Ports && c.State === 'running') {
+        for (const p of c.Ports) {
+          if (p.PublicPort === port) return false;
+        }
+      }
+    }
+    return true;
+  } catch (e) {
+    return true;
+  }
+}
+
+/**
+ * Allocate an available host port verified against OS stack & Docker containers.
  */
 async function allocatePort() {
   const start = config.portRangeStart;
@@ -50,7 +69,7 @@ async function allocatePort() {
     const port = nextPort;
     nextPort = nextPort >= end ? start : nextPort + 1;
 
-    if (!allocatedPorts.has(port) && (await isPortFree(port))) {
+    if (!allocatedPorts.has(port) && (await isPortFree(port)) && (await isDockerPortFree(port))) {
       allocatedPorts.add(port);
       return port;
     }
@@ -140,48 +159,58 @@ async function buildImage(sessionId, clonePath, containerConfig, onLog = () => {
  * @returns {{ containerId, previewUrl, terminalUrl, ports }}
  */
 async function runContainer(sessionId, imageTag, containerConfig, onLog = () => {}) {
-  const hostPort = await allocatePort();
   const containerPort = containerConfig.exposePort || 3000;
-
-  const containerName = `reporun-${sessionId}`.toLowerCase().replace(/[^a-z0-9-]/g, '-');
-
-  // Build env var array
-  const envArray = Object.entries(containerConfig.envVars || {}).map(([k, v]) => `${k}=${v}`);
-  // Add PORT so apps bind correctly
-  envArray.push(`PORT=${containerPort}`);
-
-  onLog(`Starting container on port ${hostPort} → ${containerPort}…`);
-  logger.info('Starting container', { sessionId, containerName, hostPort, containerPort });
-
-  // Parse memory limit
   const memoryBytes = parseMemoryLimit(config.maxContainerMemory);
 
-  const container = await docker.createContainer({
-    name: containerName,
-    Image: imageTag,
-    Env: envArray,
-    ExposedPorts: {
-      [`${containerPort}/tcp`]: {},
-    },
-    HostConfig: {
-      PortBindings: {
-        [`${containerPort}/tcp`]: [{ HostPort: String(hostPort) }],
-      },
-      // ── Resource limits ──
-      Memory: memoryBytes,
-      NanoCpus: config.maxContainerCpu * 1e9,
-      // ── Security ──
-      SecurityOpt: ['no-new-privileges'],
-      // Cap drop for extra security
-      CapDrop: ['ALL'],
-      CapAdd: ['CHOWN', 'SETGID', 'SETUID', 'NET_BIND_SERVICE'],
-    },
-    // Attach stdout/stderr
-    AttachStdout: true,
-    AttachStderr: true,
-  });
+  const envArray = Object.entries(containerConfig.envVars || {}).map(([k, v]) => `${k}=${v}`);
+  envArray.push(`PORT=${containerPort}`);
 
-  await container.start();
+  let hostPort;
+  let container;
+
+  for (let retry = 0; retry < 10; retry++) {
+    hostPort = await allocatePort();
+    const containerName = `reporun-${sessionId}-${retry > 0 ? retry : ''}`.replace(/-+$/, '').toLowerCase().replace(/[^a-z0-9-]/g, '-');
+
+    onLog(`Starting container on port ${hostPort} → ${containerPort}…`);
+    logger.info('Starting container attempt', { sessionId, containerName, hostPort, containerPort, retry });
+
+    try {
+      container = await docker.createContainer({
+        name: containerName,
+        Image: imageTag,
+        Env: envArray,
+        ExposedPorts: {
+          [`${containerPort}/tcp`]: {},
+        },
+        HostConfig: {
+          PortBindings: {
+            [`${containerPort}/tcp`]: [{ HostPort: String(hostPort) }],
+          },
+          Memory: memoryBytes,
+          NanoCpus: config.maxContainerCpu * 1e9,
+          SecurityOpt: ['no-new-privileges'],
+          CapDrop: ['ALL'],
+          CapAdd: ['CHOWN', 'SETGID', 'SETUID', 'NET_BIND_SERVICE'],
+        },
+        AttachStdout: true,
+        AttachStderr: true,
+      });
+
+      await container.start();
+      break;
+    } catch (err) {
+      if (err.message && (err.message.includes('already allocated') || err.message.includes('bind') || err.message.includes('address already in use'))) {
+        logger.warn(`Port ${hostPort} collision during Docker bind, retrying with next port…`, { error: err.message });
+        if (container) await container.remove({ force: true }).catch(() => {});
+        releasePort(hostPort);
+        if (retry === 9) throw err;
+      } else {
+        throw err;
+      }
+    }
+  }
+
   onLog('Container started ✓');
 
   // Stream logs
