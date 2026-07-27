@@ -320,14 +320,30 @@ function detectNode(repoPath) {
 
     // Detect start command
     const scripts = pkg.scripts || {};
-    if (scripts.dev) {
+    if (scripts.dev && !scripts.dev.includes('echo "Error')) {
       result.startCommand = `${result.packageManager} run dev`;
-    } else if (scripts.start) {
+    } else if (scripts.start && scripts.start !== 'node index.js') {
       result.startCommand = `${result.packageManager} start`;
     } else if (scripts.serve) {
       result.startCommand = `${result.packageManager} run serve`;
-    } else if (pkg.main) {
-      result.startCommand = `node ${pkg.main}`;
+    } else {
+      // Automatically verify actual entry point on disk (resolving default npm init index.js mismatches)
+      const possibleMains = [];
+      if (pkg.main && fs.existsSync(path.join(repoPath, pkg.main))) {
+        possibleMains.push(pkg.main);
+      }
+      possibleMains.push(
+        'server.js', 'app.js', 'main.js', 'api.js', 'index.js',
+        'src/server.js', 'src/app.js', 'src/main.js', 'src/index.js'
+      );
+      const actualEntry = possibleMains.find(file => fs.existsSync(path.join(repoPath, file)));
+      if (actualEntry) {
+        result.startCommand = `node ${actualEntry}`;
+      } else if (scripts.start) {
+        result.startCommand = `${result.packageManager} start`;
+      } else if (pkg.main) {
+        result.startCommand = `node ${pkg.main}`;
+      }
     }
 
     // Detect framework from dependencies
