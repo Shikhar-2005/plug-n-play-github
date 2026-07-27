@@ -124,6 +124,18 @@ router.get('/status/:sessionId', (req, res) => {
   const session = sessionManager.get(sessionId);
   if (session) {
     res.write(`data: ${JSON.stringify({ type: 'status', ...session })}\n\n`);
+    // If the session is already ready, immediately send the ready event
+    if (session.status === 'ready' && session.previewUrl) {
+      res.write(`data: ${JSON.stringify({
+        type: 'step', step: 'run', status: 'done',
+      })}\n\n`);
+      res.write(`data: ${JSON.stringify({
+        type: 'ready',
+        previewUrl: session.previewUrl,
+        terminalUrl: session.terminalUrl,
+        ports: session.ports,
+      })}\n\n`);
+    }
   }
 
   req.on('close', () => {
@@ -237,9 +249,15 @@ async function continueFromConfig(sessionId, clonePath, detection, overrides, pa
   // ── Step 5: Run ──
   emitSSE(sessionId, { type: 'step', step: 'run', status: 'running', message: 'Starting container…' });
   sessionManager.updateStatus(sessionId, 'running');
+
+  logger.info('Pipeline: calling runContainer', { sessionId });
   const runResult = await sandboxOrchestrator.runContainer(sessionId, imageId, containerConfig, (log) => {
     emitSSE(sessionId, { type: 'run_log', message: log });
   });
+  logger.info('Pipeline: runContainer returned', { sessionId, previewUrl: runResult.previewUrl });
+
+  // Brief pause to let the container's app fully bind its port
+  await new Promise(resolve => setTimeout(resolve, 1500));
 
   sessionManager.updateStatus(sessionId, 'ready', {
     previewUrl: runResult.previewUrl,
@@ -247,6 +265,10 @@ async function continueFromConfig(sessionId, clonePath, detection, overrides, pa
     containerId: runResult.containerId,
     ports: runResult.ports,
   });
+
+  // Mark the run step as done so the extension spinner transitions to checkmark
+  emitSSE(sessionId, { type: 'step', step: 'run', status: 'done' });
+  logger.info('Pipeline: emitting ready event', { sessionId });
 
   emitSSE(sessionId, {
     type: 'ready',

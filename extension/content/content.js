@@ -225,12 +225,82 @@
       });
 
       // Subscribe to SSE progress
+      let readyFired = false;
+      let readyTimeout = null;
+      const seenLogs = new Set();
+
+      function handleReady(data) {
+        if (readyFired) return;
+        readyFired = true;
+        if (readyTimeout) clearTimeout(readyTimeout);
+        showReady(body, data, info);
+      }
+
+      // Fallback: poll session API for ready status after container starts
+      function scheduleReadyPoll() {
+        if (readyFired || readyTimeout) return;
+        readyTimeout = setTimeout(async () => {
+          if (readyFired) return;
+          try {
+            const base = await REPORUN_API.getBaseUrl();
+            const resp = await fetch(`${base}/api/session/${currentSessionId}`);
+            const { session } = await resp.json();
+            if (session && session.status === 'ready' && session.previewUrl) {
+              handleReady({
+                previewUrl: session.previewUrl,
+                terminalUrl: session.terminalUrl,
+                ports: session.ports,
+              });
+            } else {
+              // Retry once more after 3s
+              readyTimeout = setTimeout(async () => {
+                if (readyFired) return;
+                try {
+                  const resp2 = await fetch(`${base}/api/session/${currentSessionId}`);
+                  const { session: s2 } = await resp2.json();
+                  if (s2 && s2.status === 'ready' && s2.previewUrl) {
+                    handleReady({
+                      previewUrl: s2.previewUrl,
+                      terminalUrl: s2.terminalUrl,
+                      ports: s2.ports,
+                    });
+                  }
+                } catch (e) { /* ignore */ }
+              }, 3000);
+            }
+          } catch (e) { /* ignore */ }
+        }, 2000);
+      }
+
       currentEventSource = await REPORUN_API.subscribeProgress(result.sessionId, {
-        onStep: (data) => updateStep(data.step, data.status, data.message),
-        onBuildLog: (data) => appendLog(data.message, 'build'),
-        onRunLog: (data) => appendLog(data.message, 'run'),
-        onReady: (data) => showReady(body, data, info),
-        onError: (data) => showError(body, 'Pipeline Error', data.message),
+        onStep: (data) => {
+          updateStep(data.step, data.status, data.message);
+          // When the run step completes, start polling as a safety net
+          if (data.step === 'run' && data.status === 'done') {
+            scheduleReadyPoll();
+          }
+        },
+        onBuildLog: (data) => {
+          if (seenLogs.has(data.message)) return;
+          seenLogs.add(data.message);
+          appendLog(data.message, 'build');
+        },
+        onRunLog: (data) => {
+          if (seenLogs.has(data.message)) return;
+          seenLogs.add(data.message);
+          appendLog(data.message, 'run');
+          // Detect container app readiness from log output as a backup trigger
+          const msg = (data.message || '').toLowerCase();
+          if (msg.includes('listening') || msg.includes('server running') ||
+              msg.includes('started on') || msg.includes('ready on') ||
+              msg.includes('accepting connections')) {
+            scheduleReadyPoll();
+          }
+        },
+        onReady: (data) => handleReady(data),
+        onError: (data) => {
+          if (!readyFired) showError(body, 'Pipeline Error', data.message);
+        },
         onResolution: (data) => showResolutionPrompts(body, data.resolutions, info),
       });
 
@@ -518,13 +588,55 @@
           logs: [],
         });
 
-        // Re-subscribe to SSE
+        // Re-subscribe to SSE with readiness fallback
+        let readyFired2 = false;
+        let readyTimeout2 = null;
+        const seenLogs2 = new Set();
+
+        function handleReady2(data) {
+          if (readyFired2) return;
+          readyFired2 = true;
+          if (readyTimeout2) clearTimeout(readyTimeout2);
+          showReady(mbody, data, info);
+        }
+
+        function scheduleReadyPoll2() {
+          if (readyFired2 || readyTimeout2) return;
+          readyTimeout2 = setTimeout(async () => {
+            if (readyFired2) return;
+            try {
+              const base = await REPORUN_API.getBaseUrl();
+              const resp = await fetch(`${base}/api/session/${currentSessionId}`);
+              const { session } = await resp.json();
+              if (session && session.status === 'ready' && session.previewUrl) {
+                handleReady2({ previewUrl: session.previewUrl, terminalUrl: session.terminalUrl, ports: session.ports });
+              }
+            } catch (e) { /* ignore */ }
+          }, 2000);
+        }
+
         currentEventSource = await REPORUN_API.subscribeProgress(currentSessionId, {
-          onStep: (data) => updateStep(data.step, data.status, data.message),
-          onBuildLog: (data) => appendLog(data.message, 'build'),
-          onRunLog: (data) => appendLog(data.message, 'run'),
-          onReady: (data) => showReady(mbody, data, info),
-          onError: (data) => showError(mbody, 'Pipeline Error', data.message),
+          onStep: (data) => {
+            updateStep(data.step, data.status, data.message);
+            if (data.step === 'run' && data.status === 'done') scheduleReadyPoll2();
+          },
+          onBuildLog: (data) => {
+            if (seenLogs2.has(data.message)) return;
+            seenLogs2.add(data.message);
+            appendLog(data.message, 'build');
+          },
+          onRunLog: (data) => {
+            if (seenLogs2.has(data.message)) return;
+            seenLogs2.add(data.message);
+            appendLog(data.message, 'run');
+            const msg = (data.message || '').toLowerCase();
+            if (msg.includes('listening') || msg.includes('server running') ||
+                msg.includes('started on') || msg.includes('ready on')) {
+              scheduleReadyPoll2();
+            }
+          },
+          onReady: (data) => handleReady2(data),
+          onError: (data) => { if (!readyFired2) showError(mbody, 'Pipeline Error', data.message); },
         });
       } catch (err) {
         submitBtn.textContent = 'Continue →';

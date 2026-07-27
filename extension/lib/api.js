@@ -93,6 +93,10 @@ const REPORUN_API = (() => {
         if (data.type === 'resolution_needed' && handlers.onResolution) handlers.onResolution(data);
         if (data.type === 'build_log' && handlers.onBuildLog) handlers.onBuildLog(data);
         if (data.type === 'run_log' && handlers.onRunLog) handlers.onRunLog(data);
+        // Handle initial status message — if session already ready, fire onReady
+        if (data.type === 'status' && data.status === 'ready' && data.previewUrl && handlers.onReady) {
+          handlers.onReady({ previewUrl: data.previewUrl, terminalUrl: data.terminalUrl, ports: data.ports });
+        }
       } catch (e) {
         console.error('[RepoRun] SSE parse error:', e);
       }
