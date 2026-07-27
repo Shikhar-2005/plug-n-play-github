@@ -396,7 +396,7 @@
     const terminalBtn = document.getElementById('reporun-open-terminal');
     if (terminalBtn && data.terminalUrl) {
       terminalBtn.addEventListener('click', () => {
-        const dashUrl = `http://localhost:3000/dashboard?session=${currentSessionId}`;
+        const dashUrl = `http://localhost:3333/dashboard?session=${currentSessionId}`;
         window.open(dashUrl, '_blank');
       });
     }

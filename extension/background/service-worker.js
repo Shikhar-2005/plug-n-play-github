@@ -34,7 +34,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case 'GET_SETTINGS':
       chrome.storage.local.get(['backendUrl'], (data) => {
         sendResponse({
-          backendUrl: data.backendUrl || 'http://localhost:3000',
+          backendUrl: data.backendUrl || 'http://localhost:3333',
         });
       });
       return true;
@@ -48,7 +48,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true;
 
     case 'HEALTH_CHECK':
-      fetch(`${message.backendUrl || 'http://localhost:3000'}/api/health`)
+      fetch(`${message.backendUrl || 'http://localhost:3333'}/api/health`)
         .then(res => res.json())
         .then(data => sendResponse({ healthy: true, ...data }))
         .catch(err => sendResponse({ healthy: false, error: err.message }));
@@ -77,7 +77,7 @@ chrome.runtime.onInstalled.addListener((details) => {
   if (details.reason === 'install') {
     // Set default settings
     chrome.storage.local.set({
-      backendUrl: 'http://localhost:3000',
+      backendUrl: 'http://localhost:3333',
       sessions: [],
     });
     console.log('[RepoRun] Extension installed');

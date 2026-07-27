@@ -19,11 +19,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   const settings = await new Promise(resolve => {
     chrome.runtime.sendMessage({ type: 'GET_SETTINGS' }, resolve);
   });
-  backendUrlInput.value = settings.backendUrl || 'http://localhost:3000';
+  backendUrlInput.value = settings.backendUrl || 'http://localhost:3333';
 
   // ── Health check ──
   async function checkHealth() {
-    const url = backendUrlInput.value.trim() || 'http://localhost:3000';
+    const url = backendUrlInput.value.trim() || 'http://localhost:3333';
     try {
       const response = await fetch(`${url}/api/health`);
       const data = await response.json();
@@ -44,7 +44,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // ── Load sessions ──
   async function loadSessions() {
-    const backendUrl = backendUrlInput.value.trim() || 'http://localhost:3000';
+    const backendUrl = backendUrlInput.value.trim() || 'http://localhost:3333';
 
     try {
       const response = await fetch(`${backendUrl}/api/sessions`);
@@ -129,7 +129,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       stopBtn.addEventListener('click', async (e) => {
         e.stopPropagation();
         const sid = stopBtn.dataset.sessionId;
-        const backendUrl = backendUrlInput.value.trim() || 'http://localhost:3000';
+        const backendUrl = backendUrlInput.value.trim() || 'http://localhost:3333';
         try {
           await fetch(`${backendUrl}/api/session/${sid}`, { method: 'DELETE' });
           card.remove();

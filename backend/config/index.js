@@ -2,7 +2,7 @@ require('dotenv').config();
 
 const config = {
   // ── Server ──
-  port: parseInt(process.env.PORT, 10) || 3000,
+  port: parseInt(process.env.PORT, 10) || 3333,
   host: process.env.HOST || '0.0.0.0',
 
   // ── Session ──

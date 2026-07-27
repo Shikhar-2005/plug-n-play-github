@@ -72,8 +72,8 @@ npm install
 npm run dev
 ```
 
-The server starts at `http://localhost:3000`.  
-Dashboard is available at `http://localhost:3000/dashboard`.
+The server starts at `http://localhost:3333`.  
+Dashboard is available at `http://localhost:3333/dashboard`.
 
 ### 2. Load the Chrome Extension
 
