@@ -96,6 +96,8 @@ function getTemplateKey(detection) {
       return detection.packageManager === 'gradle' ? 'java_gradle' : 'java_maven';
     case 'ruby': return 'ruby';
     case 'php': return 'php';
+    case 'html':
+    case 'static': return 'html';
     default: return null;
   }
 }
@@ -140,6 +142,8 @@ function getDefaultPort(detection) {
     java: 8080,
     ruby: 3000,
     php: 8000,
+    html: 80,
+    static: 80,
   };
 
   return languagePorts[detection.language] || 3000;
@@ -149,13 +153,13 @@ function getDefaultPort(detection) {
  * Generate a generic fallback Dockerfile for unknown stacks.
  */
 function generateFallbackDockerfile(detection) {
-  const startCmd = detection.startCommand || 'echo "No start command detected. Please provide one."';
-  return `FROM ubuntu:24.04
+  const startCmd = detection.startCommand || 'python3 -m http.server 3000';
+  return `FROM python:3.12-slim
 
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \\
-    curl git build-essential && \\
+    curl git make bash && \\
     rm -rf /var/lib/apt/lists/*
 
 COPY . .

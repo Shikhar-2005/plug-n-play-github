@@ -221,7 +221,17 @@ async function detect(repoPath, meta = {}) {
     return result;
   }
 
-  // ── 12. README fallback ──
+  // ── 12. Static HTML / Web App ──
+  if (hasFile('index.html') || hasFile('index.htm') || hasFile('public/index.html') || hasFile('src/index.html')) {
+    result.language = 'html';
+    result.framework = 'static';
+    result.startCommand = 'nginx -g "daemon off;"';
+    result.confidence = 'high';
+    result.detectedFiles.push('index.html');
+    return result;
+  }
+
+  // ── 13. README fallback ──
   if (hasFile('readme.md') || hasFile('readme')) {
     const readmePath = findFile(repoPath, ['README.md', 'readme.md', 'README', 'README.rst']);
     if (readmePath) {

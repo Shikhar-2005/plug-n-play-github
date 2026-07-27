@@ -268,6 +268,19 @@ EXPOSE 8000
 CMD ["php", "-S", "0.0.0.0:8000", "-t", "public"]
 `;
   },
+
+  // ── Static HTML / Web App (Nginx) ──
+  html: (_detection) => {
+    return `FROM nginx:alpine
+WORKDIR /usr/share/nginx/html
+COPY . /usr/share/nginx/html
+RUN if [ ! -f index.html ] && [ -f public/index.html ]; then cp -r public/* .; fi; \\
+    if [ ! -f index.html ] && [ -f dist/index.html ]; then cp -r dist/* .; fi; \\
+    if [ ! -f index.html ] && [ -f src/index.html ]; then cp -r src/* .; fi;
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
+`;
+  },
 };
 
 /**
