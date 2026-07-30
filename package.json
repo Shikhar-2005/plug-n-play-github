@@ -1,16 +1,17 @@
 {
-  "name": "plug-n-play-github",
+  "name": "reporun",
   "version": "1.0.0",
   "description": "RepoRun: Instantly run any GitHub repository in a secure, sandboxed browser workspace.",
   "private": true,
   "scripts": {
     "dev": "cd backend && npm run dev",
-    "start": "cd backend && npm start"
+    "start": "cd backend && npm start",
+    "test": "cd backend && npm test"
   },
   "author": "Shikhar-2005",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Shikhar-2005/plug-n-play-github.git"
+    "url": "https://github.com/Shikhar-2005/RepoRun.git"
   }
 }

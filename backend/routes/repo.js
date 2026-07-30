@@ -83,6 +83,17 @@ router.post('/run', runLimiter, async (req, res, next) => {
       return res.status(400).json({ error: { message: 'Invalid GitHub URL', code: 'INVALID_URL' } });
     }
 
+    // Fail before creating a session or cloning when Docker cannot run builds.
+    const sandboxOrchestrator = require('../services/sandboxOrchestrator');
+    const dockerStatus = await sandboxOrchestrator.checkDocker();
+    if (!dockerStatus.available) {
+      const err = new Error(`Docker Desktop is unavailable: ${dockerStatus.error}. Start Docker Desktop and ensure this account can access the Docker engine.`);
+      err.status = 503;
+      err.code = 'DOCKER_UNAVAILABLE';
+      err.expose = true;
+      throw err;
+    }
+
     const sessionManager = require('../services/sessionManager');
     const session = sessionManager.create(parsed.owner, parsed.repo);
 
@@ -179,6 +190,7 @@ async function runPipeline(session, parsed, overrides = {}) {
   emitSSE(session.id, { type: 'step', step: 'clone', status: 'running', message: 'Cloning repository…' });
   sessionManager.updateStatus(session.id, 'cloning');
   const clonePath = await repoFetcher.cloneRepo(parsed.owner, parsed.repo);
+  sessionManager.updateStatus(session.id, 'cloning', { clonePath });
   emitSSE(session.id, { type: 'step', step: 'clone', status: 'done' });
 
   // ── Step 2: Detect ──
@@ -219,8 +231,76 @@ async function runPipeline(session, parsed, overrides = {}) {
     }
   }
 
+  // ── Step 2c: Monorepo package selection ──
+  if (detection.monorepoPackages && detection.monorepoPackages.length > 1 && !overrides.selectedPackage) {
+    resolutionEngine.createPackagePicker(session.id, detection.monorepoPackages);
+    const pending = resolutionEngine.getPending(session.id);
+    sessionManager.updateStatus(session.id, 'waiting_for_input', { pendingResolutions: pending });
+    emitSSE(session.id, { type: 'resolution_needed', resolutions: pending });
+    sessionManager.setPipelineResume(session.id, { clonePath, detection, secrets, parsed });
+    return;
+  }
+
+  // ── Step 2d: Ambiguous entrypoint ──
+  if (!detection.startCommand && detection.confidence === 'low' && !overrides.startCommand) {
+    resolutionEngine.createEntrypointPrompt(session.id, detection.detectedFiles);
+    const pending = resolutionEngine.getPending(session.id);
+    sessionManager.updateStatus(session.id, 'waiting_for_input', { pendingResolutions: pending });
+    emitSSE(session.id, { type: 'resolution_needed', resolutions: pending });
+    sessionManager.setPipelineResume(session.id, { clonePath, detection, secrets, parsed });
+    return;
+  }
+
+  // ── Step 2e: GPU requirement notice ──
+  if (detection.requiresGpu && !overrides.gpuAcknowledged) {
+    resolutionEngine.createGpuNotice(session.id);
+    const pending = resolutionEngine.getPending(session.id);
+    sessionManager.updateStatus(session.id, 'waiting_for_input', { pendingResolutions: pending });
+    emitSSE(session.id, { type: 'resolution_needed', resolutions: pending });
+    sessionManager.setPipelineResume(session.id, { clonePath, detection, secrets, parsed });
+    return;
+  }
+
   // ── Step 3: Generate config ──
   await continueFromConfig(session.id, clonePath, detection, overrides, parsed);
+}
+
+/**
+ * Resume a paused pipeline without skipping any later resolution gates. A
+ * secret prompt can be followed by a package/start-command/GPU prompt.
+ */
+async function continueAfterResolution(sessionId, clonePath, detection, overrides, parsed) {
+  const resolutionEngine = require('../services/resolutionEngine');
+  const sessionManager = require('../services/sessionManager');
+
+  if (detection.monorepoPackages && detection.monorepoPackages.length > 1 && !overrides.selectedPackage) {
+    resolutionEngine.createPackagePicker(sessionId, detection.monorepoPackages);
+    const pending = resolutionEngine.getPending(sessionId);
+    sessionManager.updateStatus(sessionId, 'waiting_for_input', { pendingResolutions: pending });
+    emitSSE(sessionId, { type: 'resolution_needed', resolutions: pending });
+    sessionManager.setPipelineResume(sessionId, { clonePath, detection, parsed });
+    return;
+  }
+
+  if (!detection.startCommand && detection.confidence === 'low' && !overrides.startCommand) {
+    resolutionEngine.createEntrypointPrompt(sessionId, detection.detectedFiles);
+    const pending = resolutionEngine.getPending(sessionId);
+    sessionManager.updateStatus(sessionId, 'waiting_for_input', { pendingResolutions: pending });
+    emitSSE(sessionId, { type: 'resolution_needed', resolutions: pending });
+    sessionManager.setPipelineResume(sessionId, { clonePath, detection, parsed });
+    return;
+  }
+
+  if (detection.requiresGpu && !overrides.gpuAcknowledged) {
+    resolutionEngine.createGpuNotice(sessionId);
+    const pending = resolutionEngine.getPending(sessionId);
+    sessionManager.updateStatus(sessionId, 'waiting_for_input', { pendingResolutions: pending });
+    emitSSE(sessionId, { type: 'resolution_needed', resolutions: pending });
+    sessionManager.setPipelineResume(sessionId, { clonePath, detection, parsed });
+    return;
+  }
+
+  await continueFromConfig(sessionId, clonePath, detection, overrides, parsed);
 }
 
 /**
@@ -238,22 +318,33 @@ async function continueFromConfig(sessionId, clonePath, detection, overrides, pa
   const containerConfig = configGenerator.generate(detection, overrides.envVars || {});
   emitSSE(sessionId, { type: 'step', step: 'config', status: 'done', config: containerConfig });
 
-  // ── Step 4: Build ──
-  emitSSE(sessionId, { type: 'step', step: 'build', status: 'running', message: 'Building container image…' });
-  sessionManager.updateStatus(sessionId, 'building');
-  const imageId = await sandboxOrchestrator.buildImage(sessionId, clonePath, containerConfig, (log) => {
-    emitSSE(sessionId, { type: 'build_log', message: log });
-  });
-  emitSSE(sessionId, { type: 'step', step: 'build', status: 'done', imageId });
+  let runResult;
+  if (containerConfig.useExistingCompose) {
+    // Docker Compose performs its own build and startup as one operation.
+    emitSSE(sessionId, { type: 'step', step: 'build', status: 'running', message: 'Building Docker Compose services…' });
+    sessionManager.updateStatus(sessionId, 'building');
+    runResult = await sandboxOrchestrator.runCompose(sessionId, clonePath, (log) => {
+      emitSSE(sessionId, { type: 'build_log', message: log });
+    });
+    emitSSE(sessionId, { type: 'step', step: 'build', status: 'done', imageId: 'docker-compose' });
+  } else {
+    // ── Step 4: Build ──
+    emitSSE(sessionId, { type: 'step', step: 'build', status: 'running', message: 'Building container image…' });
+    sessionManager.updateStatus(sessionId, 'building');
+    const imageId = await sandboxOrchestrator.buildImage(sessionId, clonePath, containerConfig, (log) => {
+      emitSSE(sessionId, { type: 'build_log', message: log });
+    });
+    emitSSE(sessionId, { type: 'step', step: 'build', status: 'done', imageId });
+
+    logger.info('Pipeline: calling runContainer', { sessionId });
+    runResult = await sandboxOrchestrator.runContainer(sessionId, imageId, containerConfig, (log) => {
+      emitSSE(sessionId, { type: 'run_log', message: log });
+    });
+  }
 
   // ── Step 5: Run ──
-  emitSSE(sessionId, { type: 'step', step: 'run', status: 'running', message: 'Starting container…' });
+  emitSSE(sessionId, { type: 'step', step: 'run', status: 'running', message: 'Starting application…' });
   sessionManager.updateStatus(sessionId, 'running');
-
-  logger.info('Pipeline: calling runContainer', { sessionId });
-  const runResult = await sandboxOrchestrator.runContainer(sessionId, imageId, containerConfig, (log) => {
-    emitSSE(sessionId, { type: 'run_log', message: log });
-  });
   logger.info('Pipeline: runContainer returned', { sessionId, previewUrl: runResult.previewUrl });
 
   // Brief pause to let the container's app fully bind its port
@@ -264,6 +355,10 @@ async function continueFromConfig(sessionId, clonePath, detection, overrides, pa
     terminalUrl: runResult.terminalUrl,
     containerId: runResult.containerId,
     ports: runResult.ports,
+    serviceContainerIds: runResult.serviceContainerIds || [],
+    networkName: runResult.networkName || null,
+    composeProject: runResult.composeProject || null,
+    composePath: runResult.composePath || null,
   });
 
   // Mark the run step as done so the extension spinner transitions to checkmark
@@ -288,6 +383,7 @@ async function continueFromConfig(sessionId, clonePath, detection, overrides, pa
 
 // Expose for use by resolution route
 router._continueFromConfig = continueFromConfig;
+router._continueAfterResolution = continueAfterResolution;
 router._emitSSE = emitSSE;
 
 module.exports = router;

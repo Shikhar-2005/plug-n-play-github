@@ -463,6 +463,16 @@
   gap: 16px;
 }
 
+.reporun-resolution-validation {
+  margin: 12px 0 0;
+  color: var(--rr-error);
+  font-size: 13px;
+}
+
+.reporun-gpu-notice {
+  border-left: 3px solid var(--rr-warning);
+}
+
 .reporun-resolution-field {
   display: flex;
   flex-direction: column;
@@ -610,3 +620,250 @@
 .reporun-modal ::-webkit-scrollbar-thumb:hover {
   background: rgba(255,255,255,0.2);
 }
+
+/* ── Analyzing State ── */
+.reporun-analyzing {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 14px;
+  padding: 40px 20px;
+}
+
+.reporun-spinner-lg {
+  width: 36px;
+  height: 36px;
+  border-width: 3px;
+}
+
+.reporun-analyzing-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--rr-text);
+  margin: 0;
+}
+
+.reporun-analyzing-subtitle {
+  font-size: 13px;
+  color: var(--rr-text-muted);
+  margin: 0;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+/* ── Confirmation View (Medium Confidence) ── */
+.reporun-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.reporun-confirm-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.reporun-confirm-title {
+  font-size: 16px;
+  font-weight: 700;
+  margin: 0;
+  color: var(--rr-text);
+}
+
+.reporun-confirm-subtitle {
+  font-size: 13px;
+  color: var(--rr-text-muted);
+  margin: 4px 0 0;
+}
+
+.reporun-confirm-details {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--rr-border);
+  border-radius: var(--rr-radius-sm);
+  overflow: hidden;
+}
+
+.reporun-detail-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: var(--rr-bg-elevated);
+  gap: 12px;
+}
+
+.reporun-detail-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--rr-text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.reporun-detail-value {
+  font-size: 13px;
+  color: var(--rr-text);
+  text-align: right;
+}
+
+.reporun-detail-input {
+  flex-grow: 1;
+  padding: 6px 10px;
+  font-family: 'SF Mono', monospace;
+  font-size: 12px;
+  color: var(--rr-text);
+  background: var(--rr-bg);
+  border: 1px solid var(--rr-border);
+  border-radius: 5px;
+  outline: none;
+  text-align: right;
+  transition: border-color 0.2s;
+  max-width: 240px;
+}
+
+.reporun-detail-input:focus {
+  border-color: var(--rr-primary);
+}
+
+.reporun-detail-input::placeholder {
+  color: var(--rr-text-dim);
+  font-style: italic;
+}
+
+.reporun-detail-warning {
+  border-left: 3px solid var(--rr-warning);
+}
+
+.reporun-detail-warning .reporun-detail-value {
+  color: var(--rr-warning);
+  font-size: 12px;
+}
+
+.reporun-confirm-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.reporun-confirm-actions .reporun-action-primary {
+  flex-grow: 1;
+  justify-content: center;
+}
+
+/* ── Wizard View (Low Confidence) ── */
+.reporun-wizard {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.reporun-wizard-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.reporun-wizard-title {
+  font-size: 16px;
+  font-weight: 700;
+  margin: 0;
+  color: var(--rr-text);
+}
+
+.reporun-wizard-subtitle {
+  font-size: 13px;
+  color: var(--rr-text-muted);
+  margin: 4px 0 0;
+}
+
+.reporun-wizard-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.reporun-wizard-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.reporun-wizard-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--rr-text);
+}
+
+.reporun-wizard-optional {
+  font-weight: 400;
+  color: var(--rr-text-dim);
+  font-size: 11px;
+}
+
+.reporun-wizard-select,
+.reporun-wizard-input,
+.reporun-wizard-textarea {
+  padding: 10px 12px;
+  font-family: 'SF Mono', monospace;
+  font-size: 13px;
+  color: var(--rr-text);
+  background: var(--rr-bg-elevated);
+  border: 1px solid var(--rr-border);
+  border-radius: 6px;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.reporun-wizard-select:focus,
+.reporun-wizard-input:focus,
+.reporun-wizard-textarea:focus {
+  border-color: var(--rr-primary);
+  box-shadow: 0 0 0 3px var(--rr-primary-glow);
+}
+
+.reporun-wizard-select {
+  font-family: var(--rr-font);
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%2371717a' d='M0 0l5 6 5-6z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 32px;
+}
+
+.reporun-wizard-textarea {
+  resize: vertical;
+  min-height: 60px;
+  line-height: 1.5;
+}
+
+.reporun-wizard-input::placeholder,
+.reporun-wizard-textarea::placeholder {
+  color: var(--rr-text-dim);
+}
+
+.reporun-wizard-hint {
+  font-size: 11px;
+  color: var(--rr-text-dim);
+  margin: 0;
+}
+
+/* ── GPU Notice ── */
+.reporun-gpu-notice {
+  border-left: 3px solid var(--rr-warning);
+  padding-left: 12px;
+}
+
+/* ── Resolution Validation ── */
+.reporun-resolution-validation {
+  font-size: 12px;
+  color: var(--rr-error);
+  margin: 4px 0 0;
+  font-weight: 500;
+}
+

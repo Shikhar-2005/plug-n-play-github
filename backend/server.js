@@ -54,12 +54,15 @@ if (fs.existsSync(dashboardPath)) {
 }
 
 // ── Health check ──
-app.get('/api/health', (_req, res) => {
+app.get('/api/health', async (_req, res) => {
+  const sandboxOrchestrator = require('./services/sandboxOrchestrator');
+  const docker = await sandboxOrchestrator.checkDocker();
   res.json({
     status: 'ok',
     version: '1.0.0',
     uptime: process.uptime(),
     timestamp: new Date().toISOString(),
+    docker,
   });
 });
 

@@ -41,7 +41,12 @@ router.delete('/:id', async (req, res, next) => {
 
     // Stop & remove container
     if (session.containerId) {
-      await sandboxOrchestrator.stopContainer(session.containerId);
+      await sandboxOrchestrator.stopContainer(session.containerId, session);
+    }
+
+    if (session.clonePath) {
+      const repoFetcher = require('../services/repoFetcher');
+      await repoFetcher.cleanup(session.clonePath);
     }
 
     sessionManager.remove(req.params.id);

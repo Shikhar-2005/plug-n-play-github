@@ -41,6 +41,11 @@ function create(owner, repo) {
     previewUrl: null,
     terminalUrl: null,
     ports: null,
+    clonePath: null,
+    serviceContainerIds: [],
+    networkName: null,
+    composeProject: null,
+    composePath: null,
     error: null,
     pendingResolutions: [],
     detection: null,
@@ -135,9 +140,14 @@ function cleanupExpired() {
       // Stop container if running
       if (session.containerId) {
         const sandboxOrchestrator = require('./sandboxOrchestrator');
-        sandboxOrchestrator.stopContainer(session.containerId).catch(err => {
+        sandboxOrchestrator.stopContainer(session.containerId, session).catch(err => {
           logger.warn('Failed to stop expired container', { sessionId: id, error: err.message });
         });
+      }
+
+      if (session.clonePath) {
+        const repoFetcher = require('./repoFetcher');
+        repoFetcher.cleanup(session.clonePath);
       }
 
       remove(id);
@@ -164,7 +174,11 @@ function evictOldest() {
     const session = sessions.get(oldest);
     if (session && session.containerId) {
       const sandboxOrchestrator = require('./sandboxOrchestrator');
-      sandboxOrchestrator.stopContainer(session.containerId).catch(() => {});
+      sandboxOrchestrator.stopContainer(session.containerId, session).catch(() => {});
+    }
+    if (session && session.clonePath) {
+      const repoFetcher = require('./repoFetcher');
+      repoFetcher.cleanup(session.clonePath);
     }
     remove(oldest);
     logger.info('Evicted oldest session', { sessionId: oldest });

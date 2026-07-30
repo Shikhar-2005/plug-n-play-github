@@ -3,8 +3,6 @@
  * a Dockerfile and/or docker-compose.yml configuration.
  */
 
-const fs = require('fs');
-const path = require('path');
 const { templates, serviceCompose, serviceEnvVars } = require('../utils/dockerTemplates');
 const logger = require('../utils/logger');
 
@@ -23,39 +21,51 @@ function generate(detection, userEnvVars = {}) {
     exposePort: 3000,
     startCommand: detection.startCommand,
     useExistingDockerfile: false,
+    existingDockerfilePath: null,
     useExistingCompose: false,
   };
 
   // ── Use existing devcontainer/docker-compose/Dockerfile ──
   if (detection.language === 'devcontainer') {
-    config.useExistingDockerfile = true; // devcontainer has its own build process
-    logger.info('Using existing devcontainer config');
-    return config;
+    const devcontainer = detection.raw && detection.raw.devcontainer;
+    const dockerfilePath = devcontainer && (devcontainer.dockerFile || (devcontainer.build && devcontainer.build.dockerfile));
+    if (!dockerfilePath) {
+      const err = new Error('Dev Container detected, but it does not declare a Dockerfile that RepoRun can build. Add a Dockerfile or a runnable application manifest.');
+      err.code = 'UNSUPPORTED_DEVCONTAINER';
+      err.expose = true;
+      throw err;
+    }
+    config.useExistingDockerfile = true;
+    config.existingDockerfilePath = dockerfilePath;
+    logger.info('Using Dockerfile declared by devcontainer', { dockerfilePath });
   }
 
-  if (detection.language === 'docker-compose') {
+  // Prefer a repository-owned Compose definition whenever present. It is the
+  // only reliable source for that project's service topology and port mapping.
+  if (detection.hasDockerCompose || detection.language === 'docker-compose') {
     config.useExistingCompose = true;
     logger.info('Using existing docker-compose config');
-    return config;
   }
 
-  if (detection.hasDockerfile && detection.language === 'docker') {
+  if (detection.hasDockerfile && !config.useExistingCompose && !config.useExistingDockerfile) {
     config.useExistingDockerfile = true;
+    config.existingDockerfilePath = 'Dockerfile';
     logger.info('Using existing Dockerfile');
-    return config;
   }
 
   // ── Generate Dockerfile from template ──
-  const templateKey = getTemplateKey(detection);
-  const templateFn = templates[templateKey];
+  if (!config.useExistingDockerfile && !config.useExistingCompose) {
+    const templateKey = getTemplateKey(detection);
+    const templateFn = templates[templateKey];
 
-  if (templateFn) {
-    config.dockerfile = templateFn(detection);
-    logger.info('Generated Dockerfile', { template: templateKey });
-  } else {
-    // Fallback: generic Dockerfile
-    config.dockerfile = generateFallbackDockerfile(detection);
-    logger.warn('Using fallback Dockerfile template', { language: detection.language });
+    if (templateFn) {
+      config.dockerfile = templateFn(detection);
+      logger.info('Generated Dockerfile', { template: templateKey });
+    } else {
+      // Fallback: generic Dockerfile
+      config.dockerfile = generateFallbackDockerfile(detection);
+      logger.warn('Using fallback Dockerfile template', { language: detection.language });
+    }
   }
 
   // ── Determine the primary port to expose ──
@@ -75,6 +85,7 @@ function generate(detection, userEnvVars = {}) {
   // ── Add safe defaults ──
   if (detection.language === 'node') {
     config.envVars.NODE_ENV = config.envVars.NODE_ENV || 'development';
+    config.envVars.HOST = config.envVars.HOST || '0.0.0.0';
   } else if (detection.language === 'python') {
     config.envVars.PYTHONDONTWRITEBYTECODE = '1';
     config.envVars.PYTHONUNBUFFERED = '1';
@@ -108,6 +119,7 @@ function getTemplateKey(detection) {
 function getDefaultPort(detection) {
   const frameworkPorts = {
     nextjs: 3000,
+    vite: 5173,
     nuxt: 3000,
     'create-react-app': 3000,
     react: 5173,
@@ -166,8 +178,12 @@ COPY . .
 
 EXPOSE 3000 8000 8080
 
-CMD ${JSON.stringify(startCmd.split(' '))}
+CMD ${shellCommand(startCmd)}
 `;
+}
+
+function shellCommand(command) {
+  return JSON.stringify(['/bin/sh', '-c', command]);
 }
 
 module.exports = { generate };

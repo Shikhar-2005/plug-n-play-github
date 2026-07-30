@@ -14,6 +14,7 @@ const Docker = require('dockerode');
 const fs = require('fs');
 const path = require('path');
 const net = require('net');
+const { spawn } = require('child_process');
 const config = require('../config');
 const logger = require('../utils/logger');
 
@@ -94,13 +95,12 @@ async function buildImage(sessionId, clonePath, containerConfig, onLog = () => {
   const tag = `reporun-${sessionId}`.toLowerCase().replace(/[^a-z0-9-]/g, '-');
 
   if (containerConfig.useExistingCompose) {
-    // For docker-compose repos, we'll use docker-compose up directly
-    onLog('Using existing docker-compose configuration');
-    return tag;
+    throw new Error('Compose projects must be started with runCompose().');
   }
 
   // Write Dockerfile if generated
-  const dockerfilePath = path.join(clonePath, 'Dockerfile');
+  const dockerfileName = containerConfig.existingDockerfilePath || 'Dockerfile';
+  const dockerfilePath = path.join(clonePath, dockerfileName);
   if (containerConfig.dockerfile && !containerConfig.useExistingDockerfile) {
     fs.writeFileSync(dockerfilePath, containerConfig.dockerfile, 'utf-8');
     onLog('Generated Dockerfile written');
@@ -119,7 +119,7 @@ async function buildImage(sessionId, clonePath, containerConfig, onLog = () => {
 
   const stream = await docker.buildImage(buildContext, {
     t: tag,
-    dockerfile: 'Dockerfile',
+    dockerfile: dockerfileName.replace(/\\/g, '/'),
     rm: true,      // Remove intermediate containers
     forcerm: true,  // Remove on error too
   });
@@ -149,6 +149,169 @@ async function buildImage(sessionId, clonePath, containerConfig, onLog = () => {
   return tag;
 }
 
+function resourceName(prefix, sessionId) {
+  return `${prefix}-${sessionId.slice(0, 12)}`.toLowerCase().replace(/[^a-z0-9-]/g, '-');
+}
+
+async function pullImage(image, onLog) {
+  try {
+    await docker.getImage(image).inspect();
+    return;
+  } catch (err) {
+    if (err.statusCode && err.statusCode !== 404) throw err;
+  }
+
+  onLog(`Pulling service image ${image}…`);
+  const stream = await docker.pull(image);
+  await new Promise((resolve, reject) => {
+    docker.modem.followProgress(stream, (err) => (err ? reject(err) : resolve()));
+  });
+}
+
+function tmpfsConfig(paths = []) {
+  return Object.fromEntries(paths.map(tmpfsPath => [tmpfsPath, 'rw,nosuid,nodev,size=128m']));
+}
+
+async function provisionServices(sessionId, services, onLog) {
+  const serviceEntries = Object.entries(services || {});
+  if (serviceEntries.length === 0) return { networkName: null, serviceContainerIds: [] };
+
+  const networkName = resourceName('reporun-net', sessionId);
+  const network = await docker.createNetwork({
+    Name: networkName,
+    Driver: 'bridge',
+    Labels: { 'com.reporun.session': sessionId },
+  });
+  const serviceContainerIds = [];
+
+  try {
+    for (const [serviceName, service] of serviceEntries) {
+      await pullImage(service.image, onLog);
+      const serviceContainer = await docker.createContainer({
+        name: resourceName(`reporun-${serviceName}`, sessionId),
+        Image: service.image,
+        Env: Object.entries(service.environment || {}).map(([key, value]) => `${key}=${value}`),
+        Labels: { 'com.reporun.session': sessionId, 'com.reporun.service': serviceName },
+        HostConfig: {
+          NetworkMode: networkName,
+          Tmpfs: tmpfsConfig(service.tmpfs),
+        },
+        NetworkingConfig: {
+          EndpointsConfig: {
+            [networkName]: { Aliases: [serviceName] },
+          },
+        },
+      });
+      await serviceContainer.start();
+      serviceContainerIds.push(serviceContainer.id);
+      onLog(`Started ${serviceName} service`);
+    }
+  } catch (err) {
+    await cleanupServices(serviceContainerIds, networkName);
+    throw err;
+  }
+
+  return { networkName, serviceContainerIds };
+}
+
+async function cleanupServices(serviceContainerIds = [], networkName = null) {
+  await Promise.all(serviceContainerIds.map(async (containerId) => {
+    try {
+      const container = docker.getContainer(containerId);
+      await container.remove({ force: true });
+    } catch (err) {
+      if (err.statusCode !== 404) logger.warn('Failed to remove service container', { containerId, error: err.message });
+    }
+  }));
+
+  if (networkName) {
+    try {
+      await docker.getNetwork(networkName).remove();
+    } catch (err) {
+      if (err.statusCode !== 404) logger.warn('Failed to remove service network', { networkName, error: err.message });
+    }
+  }
+}
+
+function streamContainerLogs(container, onLog) {
+  container.logs({
+    follow: true,
+    stdout: true,
+    stderr: true,
+    tail: 50,
+  }).then((logStream) => {
+    logStream.on('data', (chunk) => {
+      // Docker log streams have an 8-byte header per frame.
+      const line = chunk.toString('utf-8').replace(/^.{8}/, '').trim();
+      if (line) onLog(line);
+    });
+  }).catch(err => onLog(`Unable to stream container logs: ${err.message}`));
+}
+
+function runDockerCli(args, cwd, onLog) {
+  return new Promise((resolve, reject) => {
+    const executable = process.platform === 'win32' ? 'docker.exe' : 'docker';
+    const child = spawn(executable, args, { cwd, windowsHide: true });
+    let stderr = '';
+
+    child.stdout.on('data', data => onLog(data.toString().trim()));
+    child.stderr.on('data', data => {
+      const line = data.toString().trim();
+      stderr += line;
+      onLog(line);
+    });
+    child.on('error', err => {
+      reject(new Error(`Docker Compose requires the Docker CLI and Compose plugin: ${err.message}`));
+    });
+    child.on('close', code => {
+      if (code === 0) resolve();
+      else reject(new Error(stderr || `docker ${args.join(' ')} exited with code ${code}`));
+    });
+  });
+}
+
+function findComposePreviewContainer(containers) {
+  const databasePorts = new Set([3306, 5432, 5672, 6379, 27017]);
+  return containers.find(container => container.Ports && container.Ports.some(port => port.PublicPort && !databasePorts.has(port.PrivatePort)))
+    || containers.find(container => container.Ports && container.Ports.some(port => port.PublicPort))
+    || null;
+}
+
+/**
+ * Start a repository-owned Docker Compose project and expose its first
+ * non-database published port as the preview endpoint.
+ */
+async function runCompose(sessionId, clonePath, onLog = () => {}) {
+  const projectName = resourceName('reporun', sessionId);
+  onLog('Starting existing Docker Compose configuration…');
+  await runDockerCli(['compose', '--project-name', projectName, 'up', '--detach', '--build', '--remove-orphans'], clonePath, onLog);
+
+  const containers = await docker.listContainers({
+    all: true,
+    filters: { label: [`com.docker.compose.project=${projectName}`] },
+  });
+  const previewContainer = findComposePreviewContainer(containers);
+  if (!previewContainer) {
+    await runDockerCli(['compose', '--project-name', projectName, 'down', '--volumes', '--remove-orphans'], clonePath, onLog).catch(() => {});
+    throw new Error('Docker Compose started, but no application service exposes a host port for preview.');
+  }
+
+  const port = previewContainer.Ports.find(item => item.PublicPort && ![3306, 5432, 5672, 6379, 27017].includes(item.PrivatePort))
+    || previewContainer.Ports.find(item => item.PublicPort);
+  const container = docker.getContainer(previewContainer.Id);
+  streamContainerLogs(container, onLog);
+
+  return {
+    containerId: previewContainer.Id,
+    previewUrl: `http://localhost:${port.PublicPort}`,
+    terminalUrl: `ws://localhost:${config.port}/ws/terminal?sessionId=${sessionId}`,
+    ports: { host: port.PublicPort, container: port.PrivatePort },
+    serviceContainerIds: containers.map(containerInfo => containerInfo.Id),
+    composeProject: projectName,
+    composePath: clonePath,
+  };
+}
+
 /**
  * Run a container from a built image.
  *
@@ -165,77 +328,78 @@ async function runContainer(sessionId, imageTag, containerConfig, onLog = () => 
   const envArray = Object.entries(containerConfig.envVars || {}).map(([k, v]) => `${k}=${v}`);
   envArray.push(`PORT=${containerPort}`);
 
+  const runtime = await provisionServices(sessionId, containerConfig.services, onLog);
   let hostPort;
   let container;
 
-  for (let retry = 0; retry < 10; retry++) {
-    hostPort = await allocatePort();
-    const containerName = `reporun-${sessionId}-${retry > 0 ? retry : ''}`.replace(/-+$/, '').toLowerCase().replace(/[^a-z0-9-]/g, '-');
+  try {
+    for (let retry = 0; retry < 10; retry++) {
+      hostPort = await allocatePort();
+      const containerName = `${resourceName('reporun-app', sessionId)}${retry > 0 ? `-${retry}` : ''}`;
 
-    onLog(`Starting container on port ${hostPort} → ${containerPort}…`);
-    logger.info('Starting container attempt', { sessionId, containerName, hostPort, containerPort, retry });
+      onLog(`Starting container on port ${hostPort} → ${containerPort}…`);
+      logger.info('Starting container attempt', { sessionId, containerName, hostPort, containerPort, retry });
 
-    try {
-      container = await docker.createContainer({
-        name: containerName,
-        Image: imageTag,
-        Env: envArray,
-        ExposedPorts: {
-          [`${containerPort}/tcp`]: {},
-        },
-        HostConfig: {
-          PortBindings: {
-            [`${containerPort}/tcp`]: [{ HostPort: String(hostPort) }],
+      try {
+        container = await docker.createContainer({
+          name: containerName,
+          Image: imageTag,
+          Env: envArray,
+          ExposedPorts: {
+            [`${containerPort}/tcp`]: {},
           },
-          Memory: memoryBytes,
-          NanoCpus: config.maxContainerCpu * 1e9,
-          SecurityOpt: ['no-new-privileges'],
-          CapDrop: ['ALL'],
-          CapAdd: ['CHOWN', 'SETGID', 'SETUID', 'NET_BIND_SERVICE'],
-        },
-        AttachStdout: true,
-        AttachStderr: true,
-      });
+          HostConfig: {
+            PortBindings: {
+              [`${containerPort}/tcp`]: [{ HostPort: String(hostPort) }],
+            },
+            NetworkMode: runtime.networkName || undefined,
+            Memory: memoryBytes,
+            NanoCpus: config.maxContainerCpu * 1e9,
+            SecurityOpt: ['no-new-privileges'],
+            CapDrop: ['ALL'],
+            CapAdd: ['CHOWN', 'SETGID', 'SETUID', 'NET_BIND_SERVICE'],
+          },
+          NetworkingConfig: runtime.networkName ? {
+            EndpointsConfig: { [runtime.networkName]: { Aliases: ['app'] } },
+          } : undefined,
+          AttachStdout: true,
+          AttachStderr: true,
+        });
 
-      await container.start();
-      break;
-    } catch (err) {
-      if (err.message && (err.message.includes('already allocated') || err.message.includes('bind') || err.message.includes('address already in use'))) {
-        logger.warn(`Port ${hostPort} collision during Docker bind, retrying with next port…`, { error: err.message });
-        if (container) await container.remove({ force: true }).catch(() => {});
-        releasePort(hostPort);
-        if (retry === 9) throw err;
-      } else {
-        throw err;
+        await container.start();
+        break;
+      } catch (err) {
+        if (err.message && (err.message.includes('already allocated') || err.message.includes('bind') || err.message.includes('address already in use'))) {
+          logger.warn(`Port ${hostPort} collision during Docker bind, retrying with next port…`, { error: err.message });
+          if (container) await container.remove({ force: true }).catch(() => {});
+          releasePort(hostPort);
+          if (retry === 9) throw err;
+        } else {
+          throw err;
+        }
       }
     }
+
+    onLog('Container started ✓');
+
+    streamContainerLogs(container, onLog);
+
+    const previewUrl = `http://localhost:${hostPort}`;
+    const terminalUrl = `ws://localhost:${config.port}/ws/terminal?sessionId=${sessionId}`;
+
+    return {
+      containerId: container.id,
+      previewUrl,
+      terminalUrl,
+      ports: { host: hostPort, container: containerPort },
+      ...runtime,
+    };
+  } catch (err) {
+    if (hostPort) releasePort(hostPort);
+    if (container) await container.remove({ force: true }).catch(() => {});
+    await cleanupServices(runtime.serviceContainerIds, runtime.networkName);
+    throw err;
   }
-
-  onLog('Container started ✓');
-
-  // Stream logs
-  const logStream = await container.logs({
-    follow: true,
-    stdout: true,
-    stderr: true,
-    tail: 50,
-  });
-
-  logStream.on('data', (chunk) => {
-    // Docker log stream has an 8-byte header per frame
-    const line = chunk.toString('utf-8').replace(/^.{8}/, '').trim();
-    if (line) onLog(line);
-  });
-
-  const previewUrl = `http://localhost:${hostPort}`;
-  const terminalUrl = `ws://localhost:${config.port}/ws/terminal?sessionId=${sessionId}`;
-
-  return {
-    containerId: container.id,
-    previewUrl,
-    terminalUrl,
-    ports: { host: hostPort, container: containerPort },
-  };
 }
 
 /**
@@ -284,34 +448,47 @@ async function attachTerminal(containerId, ws) {
 /**
  * Stop and remove a container.
  */
-async function stopContainer(containerId) {
+async function stopContainer(containerId, runtime = {}) {
+  if (runtime.composeProject && runtime.composePath) {
+    await runDockerCli(
+      ['compose', '--project-name', runtime.composeProject, 'down', '--volumes', '--remove-orphans'],
+      runtime.composePath,
+      () => {},
+    ).catch(err => logger.warn('Failed to stop Compose project', { project: runtime.composeProject, error: err.message }));
+    return;
+  }
+
   try {
-    const container = docker.getContainer(containerId);
-    const info = await container.inspect();
+    if (containerId) {
+      const container = docker.getContainer(containerId);
+      const info = await container.inspect();
 
-    if (info.State.Running) {
-      await container.stop({ t: 5 }); // 5 second grace period
-    }
-    await container.remove({ force: true });
+      if (info.State.Running) {
+        await container.stop({ t: 5 }); // 5 second grace period
+      }
+      await container.remove({ force: true });
 
-    // Release port
-    const portBindings = info.HostConfig && info.HostConfig.PortBindings;
-    if (portBindings) {
-      for (const bindings of Object.values(portBindings)) {
-        for (const binding of bindings) {
-          if (binding.HostPort) releasePort(parseInt(binding.HostPort, 10));
+      // Release port
+      const portBindings = info.HostConfig && info.HostConfig.PortBindings;
+      if (portBindings) {
+        for (const bindings of Object.values(portBindings)) {
+          for (const binding of bindings) {
+            if (binding.HostPort) releasePort(parseInt(binding.HostPort, 10));
+          }
         }
       }
+
+      // Try to remove the image too
+      try {
+        await docker.getImage(info.Config.Image).remove({ force: true });
+      } catch {
+        // Image might be shared, ignore
+      }
+
+      logger.info('Container stopped and removed', { containerId });
     }
 
-    // Try to remove the image too
-    try {
-      await docker.getImage(info.Config.Image).remove({ force: true });
-    } catch {
-      // Image might be shared, ignore
-    }
-
-    logger.info('Container stopped and removed', { containerId });
+    await cleanupServices(runtime.serviceContainerIds, runtime.networkName);
   } catch (err) {
     if (err.statusCode !== 404) {
       logger.warn('Failed to stop container', { containerId, error: err.message });
@@ -352,6 +529,7 @@ function parseMemoryLimit(limit) {
 
 module.exports = {
   buildImage,
+  runCompose,
   runContainer,
   stopContainer,
   attachTerminal,

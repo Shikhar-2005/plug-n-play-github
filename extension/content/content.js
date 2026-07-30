@@ -192,7 +192,209 @@
     const body = getModalBody();
     const repoUrl = `https://github.com/${info.owner}/${info.repo}`;
 
-    // Show initial loading state
+    try {
+      // Check backend health
+      const health = await REPORUN_API.healthCheck();
+      if (!health.healthy) {
+        showError(body, 'Cannot connect to RepoRun backend', `Make sure the backend server is running at ${await REPORUN_API.getBaseUrl()}`);
+        return;
+      }
+      if (health.docker && !health.docker.available) {
+        showError(body, 'Docker Desktop is not ready', `RepoRun can reach its backend, but it cannot build containers: ${health.docker.error || 'Docker engine unavailable'}`);
+        return;
+      }
+
+      // Show analyzing state
+      body.innerHTML = `
+        <div class="reporun-analyzing">
+          <div class="reporun-spinner reporun-spinner-lg"></div>
+          <h3 class="reporun-analyzing-title">Analyzing repository…</h3>
+          <p class="reporun-analyzing-subtitle">${info.owner}/${info.repo}</p>
+        </div>
+      `;
+
+      // First, analyze the repo to get detection info + confidence
+      const analysis = await REPORUN_API.analyzeRepo(repoUrl);
+      const confidence = analysis.detection?.confidence || 'low';
+
+      // Route based on confidence
+      if (confidence === 'high') {
+        // Auto-run — skip confirmation
+        executeRun(info, repoUrl, body);
+      } else if (confidence === 'medium') {
+        // Show confirmation with detected stack
+        showConfirmation(body, info, repoUrl, analysis);
+      } else {
+        // Show manual wizard
+        showWizard(body, info, repoUrl, analysis);
+      }
+
+    } catch (err) {
+      showError(body, 'Failed to analyze repo', err.message);
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // ── Confidence UX: Confirmation (Medium) ──
+  // ─────────────────────────────────────────────────────────────────────────
+
+  function showConfirmation(body, info, repoUrl, analysis) {
+    const d = analysis.detection || {};
+    const lang = d.language || 'unknown';
+    const framework = d.framework ? ` · ${d.framework}` : '';
+    const pm = d.packageManager ? ` (${d.packageManager})` : '';
+    const startCmd = d.startCommand || 'auto-detect';
+    const services = (d.services || []).join(', ') || 'none';
+
+    body.innerHTML = `
+      <div class="reporun-confirm">
+        <div class="reporun-confirm-header">
+          <svg viewBox="0 0 24 24" width="32" height="32" fill="none">
+            <circle cx="12" cy="12" r="11" stroke="#6366f1" stroke-width="2"/>
+            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" fill="#6366f1"/>
+          </svg>
+          <div>
+            <h3 class="reporun-confirm-title">Stack Detected</h3>
+            <p class="reporun-confirm-subtitle">We detected the following — confirm or adjust before running.</p>
+          </div>
+        </div>
+
+        <div class="reporun-confirm-details">
+          <div class="reporun-detail-row">
+            <span class="reporun-detail-label">Language</span>
+            <span class="reporun-detail-value">${lang}${framework}${pm}</span>
+          </div>
+          <div class="reporun-detail-row">
+            <span class="reporun-detail-label">Start Command</span>
+            <input type="text" class="reporun-detail-input" id="reporun-confirm-cmd" value="${startCmd === 'auto-detect' ? '' : startCmd}" placeholder="auto-detect" />
+          </div>
+          <div class="reporun-detail-row">
+            <span class="reporun-detail-label">Services</span>
+            <span class="reporun-detail-value">${services}</span>
+          </div>
+          ${d.requiresGpu ? `
+            <div class="reporun-detail-row reporun-detail-warning">
+              <span class="reporun-detail-label">\u26a0\ufe0f GPU</span>
+              <span class="reporun-detail-value">This repo may require GPU/CUDA support</span>
+            </div>
+          ` : ''}
+        </div>
+
+        <div class="reporun-confirm-actions">
+          <button class="reporun-action-btn reporun-action-primary" id="reporun-confirm-run">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="5 3 19 12 5 21 5 3" fill="currentColor" stroke="none"/>
+            </svg>
+            Looks good — Run it!
+          </button>
+          <button class="reporun-action-btn reporun-action-secondary" id="reporun-confirm-edit">
+            Edit Config
+          </button>
+        </div>
+      </div>
+    `;
+
+    document.getElementById('reporun-confirm-run').addEventListener('click', () => {
+      const cmdOverride = document.getElementById('reporun-confirm-cmd').value.trim();
+      const overrides = cmdOverride ? { startCommand: cmdOverride } : {};
+      executeRun(info, repoUrl, body, overrides);
+    });
+
+    document.getElementById('reporun-confirm-edit').addEventListener('click', () => {
+      showWizard(body, info, repoUrl, analysis);
+    });
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // ── Confidence UX: Manual Wizard (Low) ──
+  // ─────────────────────────────────────────────────────────────────────────
+
+  function showWizard(body, info, repoUrl, analysis) {
+    const d = analysis.detection || {};
+    const detectedLang = d.language || '';
+    const detectedCmd = d.startCommand || '';
+    const languages = ['node', 'python', 'go', 'rust', 'java', 'ruby', 'php', 'docker', 'html'];
+
+    const langOptions = languages.map(lang =>
+      `<option value="${lang}" ${lang === detectedLang ? 'selected' : ''}>${lang.charAt(0).toUpperCase() + lang.slice(1)}</option>`
+    ).join('');
+
+    body.innerHTML = `
+      <div class="reporun-wizard">
+        <div class="reporun-wizard-header">
+          <svg viewBox="0 0 24 24" width="32" height="32" fill="none">
+            <circle cx="12" cy="12" r="11" stroke="#f59e0b" stroke-width="2"/>
+            <line x1="12" y1="8" x2="12" y2="13" stroke="#f59e0b" stroke-width="2" stroke-linecap="round"/>
+            <circle cx="12" cy="16.5" r="1" fill="#f59e0b"/>
+          </svg>
+          <div>
+            <h3 class="reporun-wizard-title">Manual Setup</h3>
+            <p class="reporun-wizard-subtitle">We couldn't auto-detect the full config. Help us fill in the blanks.</p>
+          </div>
+        </div>
+
+        <div class="reporun-wizard-fields">
+          <div class="reporun-wizard-field">
+            <label class="reporun-wizard-label">Language / Runtime</label>
+            <select class="reporun-wizard-select" id="reporun-wizard-lang">
+              <option value="">Auto-detect</option>
+              ${langOptions}
+            </select>
+          </div>
+
+          <div class="reporun-wizard-field">
+            <label class="reporun-wizard-label">Start Command</label>
+            <input type="text" class="reporun-wizard-input" id="reporun-wizard-cmd"
+              value="${detectedCmd}" placeholder="e.g., npm run dev, python app.py, go run ." />
+            <p class="reporun-wizard-hint">The command used to start the application</p>
+          </div>
+
+          <div class="reporun-wizard-field">
+            <label class="reporun-wizard-label">Environment Variables <span class="reporun-wizard-optional">(optional)</span></label>
+            <textarea class="reporun-wizard-textarea" id="reporun-wizard-env"
+              placeholder="KEY=value&#10;ANOTHER_KEY=value" rows="3"></textarea>
+            <p class="reporun-wizard-hint">One per line, KEY=value format</p>
+          </div>
+        </div>
+
+        <button class="reporun-action-btn reporun-action-primary reporun-submit-btn" id="reporun-wizard-run">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="5 3 19 12 5 21 5 3" fill="currentColor" stroke="none"/>
+          </svg>
+          Run with this config
+        </button>
+      </div>
+    `;
+
+    document.getElementById('reporun-wizard-run').addEventListener('click', () => {
+      const lang = document.getElementById('reporun-wizard-lang').value;
+      const cmd = document.getElementById('reporun-wizard-cmd').value.trim();
+      const envText = document.getElementById('reporun-wizard-env').value.trim();
+
+      const overrides = {};
+      if (lang) overrides.language = lang;
+      if (cmd) overrides.startCommand = cmd;
+      if (envText) {
+        const envVars = {};
+        envText.split('\n').forEach(line => {
+          const eqIdx = line.indexOf('=');
+          if (eqIdx > 0) {
+            envVars[line.substring(0, eqIdx).trim()] = line.substring(eqIdx + 1).trim();
+          }
+        });
+        if (Object.keys(envVars).length > 0) overrides.envVars = envVars;
+      }
+
+      executeRun(info, repoUrl, body, overrides);
+    });
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // ── Execute Run (shared by all confidence paths) ──
+  // ─────────────────────────────────────────────────────────────────────────
+
+  async function executeRun(info, repoUrl, body, overrides = {}) {
+    // Show progress view
     body.innerHTML = renderProgress({
       repoName: `${info.owner}/${info.repo}`,
       steps: [
@@ -206,15 +408,8 @@
     });
 
     try {
-      // Check backend health
-      const health = await REPORUN_API.healthCheck();
-      if (!health.healthy) {
-        showError(body, 'Cannot connect to RepoRun backend', `Make sure the backend server is running at ${await REPORUN_API.getBaseUrl()}`);
-        return;
-      }
-
       // Start the run
-      const result = await REPORUN_API.runRepo(repoUrl);
+      const result = await REPORUN_API.runRepo(repoUrl, overrides);
       currentSessionId = result.sessionId;
 
       // Store session
@@ -465,8 +660,9 @@
 
     const terminalBtn = document.getElementById('reporun-open-terminal');
     if (terminalBtn && data.terminalUrl) {
-      terminalBtn.addEventListener('click', () => {
-        const dashUrl = `http://localhost:3333/dashboard?session=${currentSessionId}`;
+      terminalBtn.addEventListener('click', async () => {
+        const baseUrl = await REPORUN_API.getBaseUrl();
+        const dashUrl = `${baseUrl}/dashboard?session=${currentSessionId}`;
         window.open(dashUrl, '_blank');
       });
     }
@@ -519,6 +715,22 @@
         `;
       }
 
+      if (res.type === 'gpu_required') {
+        const optionsHtml = res.options.map(opt => `
+          <label class="reporun-radio-option">
+            <input type="radio" name="reporun-gpu-choice" value="${opt.value}"/>
+            <span>${opt.label}</span>
+          </label>
+        `).join('');
+        return `
+          <div class="reporun-resolution-field reporun-gpu-notice">
+            <label class="reporun-field-label">GPU support required</label>
+            <p class="reporun-field-desc">${res.description}</p>
+            <div class="reporun-radio-group">${optionsHtml}</div>
+          </div>
+        `;
+      }
+
       return '';
     }).join('');
 
@@ -560,11 +772,33 @@
       const startCommand = startCommandInput ? startCommandInput.value.trim() : null;
 
       const selectedPackage = body.querySelector('input[name="reporun-package"]:checked');
+      const gpuChoice = body.querySelector('input[name="reporun-gpu-choice"]:checked');
+
+      const requiredSecretMissing = resolutions.some(res => res.type === 'missing_secret' && res.required
+        && !envVars[res.name]);
+      const entrypointMissing = resolutions.some(res => res.type === 'ambiguous_entrypoint' && res.required)
+        && !startCommand;
+      const packageMissing = resolutions.some(res => res.type === 'package_selection' && res.required)
+        && !selectedPackage;
+      const gpuChoiceMissing = resolutions.some(res => res.type === 'gpu_required' && res.required)
+        && !gpuChoice;
+
+      if (requiredSecretMissing || entrypointMissing || packageMissing || gpuChoiceMissing) {
+        let validation = body.querySelector('.reporun-resolution-validation');
+        if (!validation) {
+          validation = document.createElement('p');
+          validation.className = 'reporun-resolution-validation';
+          body.querySelector('.reporun-resolution-fields').appendChild(validation);
+        }
+        validation.textContent = 'Complete each required field before continuing.';
+        return;
+      }
 
       const resolutionsData = {
         envVars: Object.keys(envVars).length > 0 ? envVars : undefined,
         startCommand: startCommand || undefined,
         selectedPackage: selectedPackage ? selectedPackage.value : undefined,
+        gpuChoice: gpuChoice ? gpuChoice.value : undefined,
       };
 
       const submitBtn = document.getElementById('reporun-submit-resolution');
@@ -574,6 +808,7 @@
       try {
         await REPORUN_API.submitResolution(currentSessionId, resolutionsData);
         // Re-show progress view
+        if (currentEventSource) currentEventSource.close();
         showModal();
         const mbody = getModalBody();
         mbody.innerHTML = renderProgress({

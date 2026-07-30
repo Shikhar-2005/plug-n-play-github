@@ -45,7 +45,10 @@ RUN curl -fsSL https://bun.sh/install | bash
 ENV PATH="/root/.bun/bin:\${PATH}"
 ` : '';
 
-    const startCmd = detection.startCommand || `${pm} start`;
+    const startCmd = makeNetworkReachableCommand(detection.startCommand || `${pm} start`, detection);
+    const workspaceDir = detection.workspacePackage
+      ? `\n# Run the selected package while retaining the workspace lockfile and dependencies\nWORKDIR /app/${detection.workspacePackage}`
+      : '';
 
     // When project has static frontend (index.html) alongside an Express backend,
     // generate a wrapper that injects express.static before the server starts
@@ -81,12 +84,13 @@ RUN ${isDevServer ? installDevCmd : installCmd}
 
 # Copy source code
 COPY . .
+${workspaceDir}
 ${staticWrapper}
 # Expose common ports
 EXPOSE 3000 5173 8080 4200
 
 # Start the app
-CMD ${JSON.stringify(finalCmd.split(' '))}
+CMD ${shellCommand(finalCmd)}
 `;
   },
 
@@ -135,7 +139,7 @@ COPY . .
 EXPOSE 8000 5000 8501
 
 # Start the app
-CMD ${JSON.stringify(startCmd.split(' '))}
+CMD ${shellCommand(startCmd)}
 `;
   },
 
@@ -160,7 +164,7 @@ COPY . .
 
 EXPOSE 8080 3000
 
-CMD ${JSON.stringify(startCmd.split(' '))}
+CMD ${shellCommand(startCmd)}
 `;
     }
 
@@ -206,7 +210,7 @@ RUN cargo build --release
 
 EXPOSE 8080 3000
 
-CMD ["./target/release/$(basename $(pwd))"]
+CMD ["cargo", "run", "--release"]
 `;
   },
 
@@ -316,6 +320,38 @@ function parseNodeVersion(versionStr) {
 }
 
 /**
+ * Docker's exec-form CMD does not interpret shell quoting, pipes, or &&.
+ * Generated commands come from repository manifests, so run them through the
+ * POSIX shell available in the Linux images we generate.
+ */
+function shellCommand(command) {
+  return JSON.stringify(['/bin/sh', '-c', command]);
+}
+
+/**
+ * Dev servers often bind to loopback by default, making a published Docker
+ * port unreachable. Append the framework's host flag when it is safe to do so.
+ */
+function makeNetworkReachableCommand(command, detection) {
+  if (!/\b(?:run\s+)?dev\b/.test(command) || /(?:--host|--hostname|-H)\s/.test(command)) {
+    return command;
+  }
+
+  const pm = detection.packageManager || 'npm';
+  if (detection.framework === 'nextjs') {
+    return pm === 'npm' ? `${command} -- -H 0.0.0.0` : `${command} -H 0.0.0.0`;
+  }
+
+  if (['vite', 'nuxt', 'svelte', 'sveltekit', 'vue', 'react'].includes(detection.framework)) {
+    return pm === 'npm' || pm === 'pnpm'
+      ? `${command} -- --host 0.0.0.0`
+      : `${command} --host 0.0.0.0`;
+  }
+
+  return command;
+}
+
+/**
  * Docker Compose template for ephemeral service containers.
  */
 function serviceCompose(services, appConfig = {}) {
@@ -417,4 +453,4 @@ function serviceEnvVars(services) {
   return env;
 }
 
-module.exports = { templates, serviceCompose, serviceEnvVars, parseNodeVersion };
+module.exports = { templates, serviceCompose, serviceEnvVars, parseNodeVersion, shellCommand };

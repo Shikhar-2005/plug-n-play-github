@@ -72,6 +72,9 @@ npm install
 npm run dev
 ```
 
+On Windows PowerShell systems that block `npm.ps1`, use `npm.cmd run dev`
+instead. Docker Desktop must be running before clicking **Run this repo**.
+
 The server starts at `http://localhost:3333`.  
 Dashboard is available at `http://localhost:3333/dashboard`.
 
@@ -91,7 +94,7 @@ Dashboard is available at `http://localhost:3333/dashboard`.
 | Python (pip/poetry/pipenv) | `requirements.txt`, `pyproject.toml`, `Pipfile` | High |
 | Go | `go.mod` | High |
 | Docker | `Dockerfile`, `docker-compose.yml` | High |
-| DevContainers | `.devcontainer/` | High (passthrough) |
+| DevContainers | `.devcontainer/` | Dockerfile-based |
 | Rust | `Cargo.toml` | Medium |
 | Java (Maven/Gradle) | `pom.xml`, `build.gradle` | Medium |
 | Ruby | `Gemfile` | Low |
