@@ -56,9 +56,13 @@
 
   async function checkHealth() {
     try {
-      await api('/api/health');
+      const data = await api('/api/health');
       serverDot.className = 'server-dot connected';
       serverText.textContent = 'Connected';
+      // Update cache stat from health response
+      if (data.cacheStats && statCache) {
+        statCache.querySelector('.stat-value').textContent = data.cacheStats.totalEntries;
+      }
       return true;
     } catch {
       serverDot.className = 'server-dot disconnected';

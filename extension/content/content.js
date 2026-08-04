@@ -406,6 +406,7 @@
       ],
       logs: [],
     });
+    bindLogToggle();
 
     try {
       // Start the run
@@ -544,6 +545,18 @@
         </div>
       </div>
     `;
+  }
+
+  function bindLogToggle() {
+    const toggle = document.getElementById('reporun-logs-toggle');
+    const content = document.getElementById('reporun-logs-content');
+    if (toggle && content) {
+      toggle.addEventListener('click', () => {
+        const collapsed = content.style.display === 'none';
+        content.style.display = collapsed ? '' : 'none';
+        toggle.textContent = collapsed ? '▼' : '▶';
+      });
+    }
   }
 
   function updateStep(stepId, status, message) {
@@ -822,6 +835,7 @@
           ],
           logs: [],
         });
+        bindLogToggle();
 
         // Re-subscribe to SSE with readiness fallback
         let readyFired2 = false;

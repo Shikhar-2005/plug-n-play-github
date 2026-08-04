@@ -15,11 +15,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   const backendUrlInput = document.getElementById('backend-url');
   const saveBtn = document.getElementById('save-settings');
 
+  const dashboardLink = document.querySelector('.footer-link');
+
   // ── Load settings ──
   const settings = await new Promise(resolve => {
     chrome.runtime.sendMessage({ type: 'GET_SETTINGS' }, resolve);
   });
   backendUrlInput.value = settings.backendUrl || 'http://localhost:3333';
+  if (dashboardLink) dashboardLink.href = `${backendUrlInput.value}/dashboard`;
 
   // ── Health check ──
   async function checkHealth() {
@@ -189,6 +192,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     chrome.runtime.sendMessage({ type: 'SET_SETTINGS', backendUrl: url }, () => {
       saveBtn.classList.add('saved');
       setTimeout(() => saveBtn.classList.remove('saved'), 1500);
+      if (dashboardLink) dashboardLink.href = `${url}/dashboard`;
       checkHealth();
       loadSessions();
     });

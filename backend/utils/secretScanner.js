@@ -16,6 +16,8 @@ const SERVICE_LINKS = {
   STRIPE_SECRET_KEY:    { service: 'Stripe',       url: 'https://dashboard.stripe.com/apikeys' },
   STRIPE_PUBLISHABLE_KEY: { service: 'Stripe',     url: 'https://dashboard.stripe.com/apikeys' },
   OPENAI_API_KEY:       { service: 'OpenAI',       url: 'https://platform.openai.com/api-keys' },
+  GEMINI_API_KEY:       { service: 'Google AI Studio', url: 'https://aistudio.google.com/apikey' },
+  GOOGLE_GEMINI_API_KEY:{ service: 'Google AI Studio', url: 'https://aistudio.google.com/apikey' },
   AWS_ACCESS_KEY_ID:    { service: 'AWS',           url: 'https://console.aws.amazon.com/iam/' },
   AWS_SECRET_ACCESS_KEY:{ service: 'AWS',           url: 'https://console.aws.amazon.com/iam/' },
   TWILIO_ACCOUNT_SID:   { service: 'Twilio',       url: 'https://console.twilio.com/' },

@@ -362,6 +362,21 @@ function detectNode(repoPath) {
 
     // Detect framework from dependencies
     const allDeps = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
+
+    // Bail out for bare npm-init projects that are really static HTML sites.
+    // If no valid start command was found, no server-side framework is present,
+    // and the repo has .html files, let detection fall through to the static
+    // HTML template (Nginx) instead of generating a broken `node index.js`.
+    if (!result.startCommand) {
+      const serverDeps = ['express', 'fastify', 'koa', 'hono', '@nestjs/core', 'next', 'nuxt', 'nuxt3', 'vite', 'react-scripts', '@angular/core'];
+      const hasServerDep = serverDeps.some(dep => allDeps[dep]);
+      const hasHtmlFiles = fs.readdirSync(repoPath).some(f => /\.html?$/i.test(f));
+      if (!hasServerDep && hasHtmlFiles) {
+        logger.info('Bare package.json with HTML files — deferring to static HTML detection');
+        return null;
+      }
+    }
+
     if (allDeps['vite']) {
       result.framework = 'vite';
     } else if (allDeps['next']) {
@@ -866,105 +881,6 @@ function findFileRecursive(basePath, filename, maxDepth, currentDepth = 0) {
     // ignore
   }
   return null;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// ── GPU / CUDA Detection ──
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Detect whether a repository requires GPU/CUDA support.
- * Checks Python/Node/Go dependency files and scans source code for CUDA usage.
- */
-function detectGpu(repoPath, files) {
-  const fileSet = new Set(files.map(f => f.toLowerCase()));
-
-  // ── Check Python deps for GPU libraries ──
-  const pythonDepFiles = ['requirements.txt', 'pyproject.toml', 'pipfile', 'setup.py', 'setup.cfg'];
-  for (const depFile of pythonDepFiles) {
-    if (fileSet.has(depFile)) {
-      try {
-        const content = fs.readFileSync(path.join(repoPath, depFile), 'utf-8').toLowerCase();
-        const gpuLibs = ['torch', 'tensorflow', 'tensorflow-gpu', 'cupy', 'nvidia-', 'cuda-python',
-          'jax[cuda', 'pycuda', 'numba', 'rapids', 'cudf', 'cuml', 'onnxruntime-gpu'];
-        if (gpuLibs.some(lib => content.includes(lib))) {
-          logger.info('GPU requirement detected from Python deps', { file: depFile });
-          return true;
-        }
-      } catch { /* ignore */ }
-    }
-  }
-
-  // ── Check Node.js deps for GPU libraries ──
-  if (fileSet.has('package.json')) {
-    try {
-      const pkg = JSON.parse(fs.readFileSync(path.join(repoPath, 'package.json'), 'utf-8'));
-      const allDeps = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
-      const gpuNodeLibs = ['@tensorflow/tfjs-node-gpu', 'gpu.js', 'cuda'];
-      if (gpuNodeLibs.some(lib => allDeps[lib])) {
-        logger.info('GPU requirement detected from Node deps');
-        return true;
-      }
-    } catch { /* ignore */ }
-  }
-
-  // ── Scan source files for CUDA / GPU imports ──
-  const sourceExts = ['.py', '.cu', '.cuh', '.cpp', '.c', '.go', '.rs'];
-  const cudaPatterns = [
-    /import\s+(?:torch|tensorflow|cupy|pycuda)/i,
-    /from\s+(?:torch|tensorflow|cupy|pycuda)\s+import/i,
-    /#include\s*[<"]cuda/i,
-    /cuda\.h/i,
-    /cudaMalloc|cudaMemcpy|cudaFree/,
-    /torch\.cuda\.is_available/,
-    /tf\.config\..*gpu/i,
-    /with\s+tf\.device.*gpu/i,
-  ];
-
-  const sourceFiles = collectSourceFiles(repoPath, sourceExts, 2);
-  for (const filePath of sourceFiles) {
-    try {
-      const content = fs.readFileSync(filePath, 'utf-8');
-      if (cudaPatterns.some(pattern => pattern.test(content))) {
-        logger.info('GPU requirement detected from source code', { file: path.relative(repoPath, filePath) });
-        return true;
-      }
-    } catch { /* ignore */ }
-  }
-
-  // ── Check for .cu files (CUDA source) ──
-  if (files.some(f => f.toLowerCase().endsWith('.cu') || f.toLowerCase().endsWith('.cuh'))) {
-    logger.info('GPU requirement detected from .cu files');
-    return true;
-  }
-
-  return false;
-}
-
-/**
- * Collect source files with given extensions up to a max depth.
- */
-function collectSourceFiles(dirPath, extensions, maxDepth, currentDepth = 0) {
-  if (currentDepth > maxDepth) return [];
-  const results = [];
-  try {
-    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
-    for (const entry of entries) {
-      const fullPath = path.join(dirPath, entry.name);
-      if (entry.isFile() && extensions.some(ext => entry.name.endsWith(ext))) {
-        results.push(fullPath);
-      } else if (entry.isDirectory()
-        && !entry.name.startsWith('.')
-        && entry.name !== 'node_modules'
-        && entry.name !== '__pycache__'
-        && entry.name !== 'vendor'
-        && entry.name !== 'dist'
-        && entry.name !== 'build') {
-        results.push(...collectSourceFiles(fullPath, extensions, maxDepth, currentDepth + 1));
-      }
-    }
-  } catch { /* ignore */ }
-  return results;
 }
 
 module.exports = { detect };
